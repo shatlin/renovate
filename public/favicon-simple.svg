@@ -1,0 +1,17 @@
+<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simple modern house icon with transparent background -->
+  
+  <!-- House outline -->
+  <path d="M 5 14 L 16 6 L 27 14 L 25 14 L 25 26 L 7 26 L 7 14 Z" 
+        fill="white" />
+  
+  <!-- Wall -->
+  <rect x="7" y="14" width="18" height="12" fill="white" />
+  
+  <!-- Door -->
+  <rect x="13.5" y="18" width="5" height="8" fill="#475569" />
+  
+  <!-- Windows -->
+  <rect x="9" y="16" width="3" height="3" fill="#475569" />
+  <rect x="20" y="16" width="3" height="3" fill="#475569" />
+</svg>

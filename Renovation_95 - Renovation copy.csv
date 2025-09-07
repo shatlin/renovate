@@ -1,0 +1,82 @@
+Room,Item,Type,Material Cost,Labour Cost,Total
+Kitchen,Cabinets,,30000,10000,40000
+Kitchen,Water dispenser section,Plan and design,1000,500,1500
+Kitchen,Glass display,,4000,1000,5000
+Kitchen,Granite counter top,,20000,4000,24000
+Kitchen,Stove,,3800,500,4300
+Kitchen,Oven,,5550,500,6050
+Kitchen,Chimney,,1899,500,2399
+Kitchen,Sink,,2000,1000,3000
+Kitchen,Kitchen sink tap,,0,500,500
+Kitchen,Plumbing work for washing machine and sink etc,,,2000,2000
+Kitchen,Lights,,1500,1000,2500
+Kitchen,Electrical points and lightings throughout,Plan and design,1000,1000,2000
+Kitchen,Tiling for walls,,2000,2000,4000
+Kitchen,Floor tiling,,2000,2000,4000
+Kitchen,Blinds,,250,250,500
+Kitchen,Placeholder for washing machine and dishwasher,Plan and design,,,
+Kitchen,Fridge Place,Plan and design,,,
+Kitchen,Dustbin Place,Plan and design,,,
+Kitchen,Existing tiles breaking,,,800,800
+Master Bathroom,Full bathroom tiling,,2000,2000,4000
+Master Bathroom,Shower set up,,2000,1000,3000
+Master Bathroom,Shower Drain,,500,1000,1500
+Master Bathroom,Shower Doors - full close or open,,,,,
+Master Bathroom,Basin,,,,,
+Master Bathroom,Toilet,,,,,
+Master Bathroom,Cabinet,,,,,
+Master Bathroom,Mirrors,,,,,
+Master Bathroom,Lights,,,,,
+Master Bathroom,Electrical plugs,,,,,
+Master Bathroom,Bidet,,,,,
+Master Bathroom,Washbasin tap,,,,,
+Master Bathroom,Shampoo and soap organizers in shower,,,,,
+Master Bathroom,Heater,,,,,
+Master Bathroom,Towel rack,,,,,
+Master Bathroom,Consider water storage/tub along with shower,,,,,
+Master Bathroom,Replace bathroom door,,,,,
+Master Bathroom,Existing tiles breaking,,,800,800
+Master Bathroom,Painting,,,,,
+Guest Bathroom,Full bathroom tiling,,2000,2000,4000
+Guest Bathroom,Shower set up,,,,,
+Guest Bathroom,Shower Doors,,,,,
+Guest Bathroom,Basin,,,,,
+Guest Bathroom,Toilet,,,,,
+Guest Bathroom,Cabinet,,,,,
+Guest Bathroom,Mirrors,,,,,
+Guest Bathroom,Lights,,,,,
+Guest Bathroom,Electrical plugs,,,,,
+Guest Bathroom,Bidet,,,,,
+Guest Bathroom,Washbasin tap,,,,,
+Guest Bathroom,Shampoo and soap organizers in shower,,,,,
+Guest Bathroom,Heater,,,,,
+Guest Bathroom,Towel rack,,,,,
+Guest Bathroom,Replace bathroom door,,,,,
+Guest Bathroom,Painting,,,,,
+Guest Bathroom,Existing tiles breaking,,,800,800
+Master Bedroom,Replace door,,,,,
+Master Bedroom,Lights/plugs,,,,,
+Master Bedroom,Cupboards,,,,,
+Master Bedroom,Tiling,,1000,1000,2000
+Master Bedroom,Wall tiling,,1000,1000,2000
+Master Bedroom,Blinds,,,,,
+Master Bedroom,Mirrors,,,,,
+Master Bedroom,Painting,,,,,
+Other Bedroom,Replace door,,,,,
+Other Bedroom,Lights/plugs,,,,,
+Other Bedroom,Cupboards,,,,,
+Other Bedroom,Tiling,,1000,1000,2000
+Other Bedroom,Wall tiling,,1000,1000,2000
+Other Bedroom,Blinds,,,,,
+Other Bedroom,Mirrors,,,,,
+Other Bedroom,Painting,,,,,
+Living Room,Lights/plugs,,,,,
+Living Room,Tiling,,1000,1000,2000
+Living Room,Wall tiling,,1000,1000,2000
+Living Room,Blinds,,,,,
+Living Room,Painting,,,,,
+Balcony,Tiling,,1000,1000,2000
+Balcony,Painting,,,,,
+Walking Area,Tiling,,,,,
+Walking Area,Lights,,,,,
+Walking Area,Painting,,,,,

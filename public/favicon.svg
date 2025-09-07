@@ -1,0 +1,28 @@
+<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Modern transparent favicon with white house -->
+  
+  <!-- House shape - clean and modern -->
+  <!-- Roof -->
+  <path d="M 4 15 L 16 5 L 28 15 L 26 15 L 26 27 L 6 27 L 6 15 Z" 
+        fill="white" 
+        opacity="0.95" />
+  
+  <!-- Wall -->
+  <rect x="6" y="15" width="20" height="12" fill="white" opacity="0.9" />
+  
+  <!-- Door -->
+  <rect x="13" y="19" width="6" height="8" fill="#64748B" opacity="0.8" />
+  
+  <!-- Windows -->
+  <rect x="8" y="17" width="4" height="4" fill="#64748B" opacity="0.7" />
+  <rect x="20" y="17" width="4" height="4" fill="#64748B" opacity="0.7" />
+  
+  <!-- Window panes -->
+  <line x1="10" y1="17" x2="10" y2="21" stroke="white" stroke-width="0.5" opacity="0.8" />
+  <line x1="8" y1="19" x2="12" y2="19" stroke="white" stroke-width="0.5" opacity="0.8" />
+  <line x1="22" y1="17" x2="22" y2="21" stroke="white" stroke-width="0.5" opacity="0.8" />
+  <line x1="20" y1="19" x2="24" y2="19" stroke="white" stroke-width="0.5" opacity="0.8" />
+  
+  <!-- Door handle -->
+  <circle cx="17.5" cy="23" r="0.5" fill="white" opacity="0.9" />
+</svg>
