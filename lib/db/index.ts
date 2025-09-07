@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const DB_PATH = path.join(process.cwd(), 'renovation-budget.db');
+const DB_PATH = path.join(process.cwd(), 'renovate.db');
 const SCHEMA_PATH = path.join(process.cwd(), 'lib', 'db', 'schema.sql');
 
 class DatabaseManager {
