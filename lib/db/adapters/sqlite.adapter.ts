@@ -8,7 +8,7 @@ export class SQLiteAdapter implements IDatabase {
   private static instance: SQLiteAdapter | null = null
 
   constructor(dbPath?: string) {
-    const DB_PATH = dbPath || path.join(process.cwd(), 'renovation-budget.db')
+    const DB_PATH = dbPath || path.join(process.cwd(), 'renovate.db')
     this.db = new Database(DB_PATH)
     this.db.pragma('foreign_keys = ON')
     this.initializeDatabase()

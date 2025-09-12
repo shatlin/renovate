@@ -162,27 +162,49 @@ class DatabaseManager {
 
   createBudgetItem(data: {
     project_id: number;
-    room_id?: number;
-    category_id?: number;
+    room_id?: number | null;
+    category_id?: number | null;
     name: string;
-    description?: string;
+    description?: string | null;
     quantity?: number;
     unit_price?: number;
     estimated_cost?: number;
-    vendor?: string;
-    notes?: string;
+    actual_cost?: number | null;
+    vendor?: string | null;
+    notes?: string | null;
+    long_notes?: string | null;
+    status?: string;
+    type?: string;
   }) {
     const stmt = this.db.prepare(`
       INSERT INTO budget_items (
         project_id, room_id, category_id, name, description, 
-        quantity, unit_price, estimated_cost, vendor, notes
+        quantity, unit_price, estimated_cost, actual_cost, vendor, notes, long_notes, status
       )
       VALUES (
         @project_id, @room_id, @category_id, @name, @description,
-        @quantity, @unit_price, @estimated_cost, @vendor, @notes
+        @quantity, @unit_price, @estimated_cost, @actual_cost, @vendor, @notes, @long_notes, @status
       )
     `);
-    const result = stmt.run(data);
+    
+    // Ensure all parameters have default values
+    const params = {
+      project_id: data.project_id,
+      room_id: data.room_id || null,
+      category_id: data.category_id || null,
+      name: data.name,
+      description: data.description || null,
+      quantity: data.quantity || 1,
+      unit_price: data.unit_price || 0,
+      estimated_cost: data.estimated_cost || 0,
+      actual_cost: data.actual_cost || null,
+      vendor: data.vendor || null,
+      notes: data.notes || null,
+      long_notes: data.long_notes || null,
+      status: data.status || 'pending'
+    };
+    
+    const result = stmt.run(params);
     return this.getBudgetItem(result.lastInsertRowid as number);
   }
 
@@ -197,6 +219,54 @@ class DatabaseManager {
 
   deleteBudgetItem(id: number) {
     return this.db.prepare('DELETE FROM budget_items WHERE id = ?').run(id);
+  }
+
+  // Budget Item Notes methods
+  getBudgetItemNotes(budgetItemId: number) {
+    return this.db.prepare(`
+      SELECT bin.*, u.name as created_by_name
+      FROM budget_item_notes bin
+      LEFT JOIN users u ON bin.created_by = u.id
+      WHERE bin.budget_item_id = ?
+      ORDER BY bin.created_at DESC
+    `).all(budgetItemId);
+  }
+
+  createBudgetItemNote(data: {
+    budget_item_id: number;
+    note: string;
+    created_by?: number;
+  }) {
+    const stmt = this.db.prepare(`
+      INSERT INTO budget_item_notes (budget_item_id, note, created_by)
+      VALUES (@budget_item_id, @note, @created_by)
+    `);
+    const result = stmt.run(data);
+    return this.db.prepare(`
+      SELECT bin.*, u.name as created_by_name
+      FROM budget_item_notes bin
+      LEFT JOIN users u ON bin.created_by = u.id
+      WHERE bin.id = ?
+    `).get(result.lastInsertRowid);
+  }
+
+  updateBudgetItemNote(id: number, note: string) {
+    const stmt = this.db.prepare(`
+      UPDATE budget_item_notes 
+      SET note = @note, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = @id
+    `);
+    stmt.run({ note, id });
+    return this.db.prepare(`
+      SELECT bin.*, u.name as created_by_name
+      FROM budget_item_notes bin
+      LEFT JOIN users u ON bin.created_by = u.id
+      WHERE bin.id = ?
+    `).get(id);
+  }
+
+  deleteBudgetItemNote(id: number) {
+    return this.db.prepare('DELETE FROM budget_item_notes WHERE id = ?').run(id);
   }
 
   // Category methods

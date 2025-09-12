@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useCurrency } from '@/contexts/CurrencyContext'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -20,11 +20,13 @@ import AddTimelineModal from './AddTimelineModal'
 import AddTimelineNote from './AddTimelineNote'
 import LinkBudgetModal from './LinkBudgetModal'
 import EditTimelineModal from './EditTimelineModal'
+import AddItemModal from './AddItemModal'
 import EditItemModal from './EditItemModal'
 import RoomsList from './RoomsList'
 import BudgetItemsList from './BudgetItemsList'
 import VendorsList from './VendorsList'
 import ActionPlanModal from './ActionPlanModal'
+import BudgetItemNotesModal from './BudgetItemNotesModal'
 
 interface Project {
   id: number
@@ -115,6 +117,7 @@ export default function ProjectDetailsPage() {
   const [showAddRoomModal, setShowAddRoomModal] = useState(false)
   const [showAddItemModal, setShowAddItemModal] = useState(false)
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null)
+  const [notesItem, setNotesItem] = useState<BudgetItem | null>(null)
   const [showAddVendorModal, setShowAddVendorModal] = useState(false)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [showAddTimelineModal, setShowAddTimelineModal] = useState(false)
@@ -853,6 +856,7 @@ export default function ProjectDetailsPage() {
               onEdit={(item) => setEditingItem(item)}
               onDelete={handleDeleteItem}
               onReorder={(items) => setBudgetItems(items)}
+              onViewNotes={(item) => setNotesItem(item)}
             />
           </div>
         )}
@@ -1301,6 +1305,17 @@ export default function ProjectDetailsPage() {
         />
       )}
 
+      {notesItem && (
+        <BudgetItemNotesModal
+          projectId={parseInt(projectId)}
+          item={notesItem}
+          onClose={() => setNotesItem(null)}
+          onSave={(updatedItem) => {
+            fetchBudgetItems()
+          }}
+        />
+      )}
+
       {(showAddVendorModal || editingVendor) && (
         <AddVendorModal
           projectId={parseInt(projectId)}
@@ -1381,11 +1396,34 @@ export default function ProjectDetailsPage() {
 }
 
 function AddRoomModal({ projectId, onClose, onSuccess }: any) {
+  const modalRef = useRef<HTMLDivElement>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     allocated_budget: ''
   })
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    document.addEventListener('mousedown', handleClickOutside)
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [onClose])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1411,6 +1449,7 @@ function AddRoomModal({ projectId, onClose, onSuccess }: any) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <motion.div
+        ref={modalRef}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl max-w-md w-full p-6"
@@ -1470,211 +1509,6 @@ function AddRoomModal({ projectId, onClose, onSuccess }: any) {
               className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
             >
               Add Room
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  )
-}
-
-function AddItemModal({ projectId, rooms, categories, vendors, onClose, onSuccess }: any) {
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    room_id: '',
-    category_id: '',
-    quantity: '1',
-    unit_price: '',
-    estimated_cost: '',
-    vendor: '',
-    notes: ''
-  })
-
-  useEffect(() => {
-    const qty = parseFloat(formData.quantity) || 0
-    const price = parseFloat(formData.unit_price) || 0
-    const estimated = qty * price
-    setFormData(prev => ({ ...prev, estimated_cost: estimated.toString() }))
-  }, [formData.quantity, formData.unit_price])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    try {
-      const response = await fetch(`/api/projects/${projectId}/budget-items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          room_id: formData.room_id ? parseInt(formData.room_id) : null,
-          category_id: formData.category_id ? parseInt(formData.category_id) : null,
-          quantity: parseInt(formData.quantity) || 1,
-          unit_price: parseFloat(formData.unit_price) || 0,
-          estimated_cost: parseFloat(formData.estimated_cost) || 0
-        })
-      })
-      
-      if (response.ok) {
-        onSuccess()
-      }
-    } catch (error) {
-      console.error('Error creating item:', error)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
-      >
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Add Budget Item</h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Item Name *
-              </label>
-              <input
-                type="text"
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Kitchen Cabinets"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Room
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={formData.room_id}
-                onChange={(e) => setFormData({ ...formData, room_id: e.target.value })}
-              >
-                <option value="">Select Room</option>
-                {rooms.map((room: Room) => (
-                  <option key={room.id} value={room.id}>{room.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Category
-            </label>
-            <select
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={formData.category_id}
-              onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-            >
-              <option value="">Select Category</option>
-              {categories.map((cat: Category) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <textarea
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              rows={2}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            />
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity
-              </label>
-              <input
-                type="number"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit Price
-              </label>
-              <input
-                type="number"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={formData.unit_price}
-                onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
-                placeholder="500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated Cost
-              </label>
-              <input
-                type="number"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
-                value={formData.estimated_cost}
-                readOnly
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Vendor (Optional)
-            </label>
-            <select
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={formData.vendor}
-              onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-            >
-              <option value="">Select Vendor (Optional)</option>
-              {vendors?.map((vendor: any) => (
-                <option key={vendor.id} value={vendor.name}>
-                  {vendor.name} {vendor.specialization ? `- ${vendor.specialization}` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notes
-            </label>
-            <textarea
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              rows={2}
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            />
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Add Item
             </button>
           </div>
         </form>

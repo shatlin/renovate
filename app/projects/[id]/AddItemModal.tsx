@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
+import { X } from 'lucide-react'
 
-interface EditItemModalProps {
+interface AddItemModalProps {
   projectId: number
-  item: any
   rooms: any[]
   categories: any[]
   vendors: any[]
@@ -13,30 +13,29 @@ interface EditItemModalProps {
   onSuccess: () => void
 }
 
-export default function EditItemModal({ 
+export default function AddItemModal({ 
   projectId, 
-  item, 
   rooms, 
   categories, 
   vendors, 
   onClose, 
   onSuccess 
-}: EditItemModalProps) {
+}: AddItemModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const [formData, setFormData] = useState({
-    name: item.name || '',
-    description: item.description || '',
-    room_id: item.room_id?.toString() || '',
-    category_id: item.category_id?.toString() || '',
-    quantity: item.quantity?.toString() || '1',
-    unit_price: item.unit_price?.toString() || '',
-    estimated_cost: item.estimated_cost?.toString() || '',
-    actual_cost: item.actual_cost?.toString() || '',
-    vendor: item.vendor || '',
-    status: item.status || 'pending',
-    type: item.type || 'material',
-    notes: item.notes || '',
-    long_notes: item.long_notes || ''
+    name: '',
+    description: '',
+    room_id: '',
+    category_id: '',
+    quantity: '1',
+    unit_price: '',
+    estimated_cost: '',
+    actual_cost: '',
+    vendor: '',
+    status: 'pending',
+    type: 'material',
+    notes: '',
+    long_notes: ''
   })
 
   useEffect(() => {
@@ -72,9 +71,10 @@ export default function EditItemModal({
     e.preventDefault()
     
     try {
-      const response = await fetch(`/api/projects/${projectId}/budget-items/${item.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/projects/${projectId}/budget-items`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({
           ...formData,
           room_id: formData.room_id ? parseInt(formData.room_id) : null,
@@ -84,15 +84,22 @@ export default function EditItemModal({
           estimated_cost: parseFloat(formData.estimated_cost) || 0,
           actual_cost: formData.actual_cost ? parseFloat(formData.actual_cost) : null,
           notes: formData.notes,
-          long_notes: formData.long_notes
+          long_notes: formData.long_notes,
+          status: formData.status,
+          type: formData.type
         })
       })
       
       if (response.ok) {
         onSuccess()
+      } else {
+        const error = await response.json()
+        console.error('Error creating item:', error)
+        alert(error.error || 'Failed to create budget item')
       }
     } catch (error) {
-      console.error('Error updating item:', error)
+      console.error('Error creating item:', error)
+      alert('Failed to create budget item')
     }
   }
 
@@ -104,7 +111,15 @@ export default function EditItemModal({
         animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl w-full max-w-5xl p-8 max-h-[90vh] overflow-y-auto shadow-2xl"
       >
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Edit Budget Item</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Add New Budget Item</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
         
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -134,13 +149,24 @@ export default function EditItemModal({
                 />
                 <span className="text-sm">Labour</span>
               </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="type"
+                  value="service"
+                  checked={formData.type === 'service'}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="mr-2"
+                />
+                <span className="text-sm">Service</span>
+              </label>
             </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {formData.type === 'labour' ? 'Service Name *' : 'Item Name *'}
+                Item Name *
               </label>
               <input
                 type="text"
@@ -148,12 +174,13 @@ export default function EditItemModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g., Paint, Tiles, Labor"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Room
+                Room (Optional)
               </label>
               <select
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -162,49 +189,56 @@ export default function EditItemModal({
               >
                 <option value="">Select Room</option>
                 {rooms.map((room: any) => (
-                  <option key={room.id} value={room.id}>{room.name}</option>
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Category
-            </label>
-            <select
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={formData.category_id}
-              onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-            >
-              <option value="">Select Category</option>
-              {categories.map((cat: any) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Category (Optional)
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.category_id}
+                onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+              >
+                <option value="">Select Category</option>
+                {categories.map((category: any) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <textarea
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Additional details..."
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description (Optional)
+              </label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Brief description"
+              />
+            </div>
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity
+                Quantity *
               </label>
               <input
                 type="number"
                 min="1"
+                required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={formData.quantity}
                 onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
@@ -221,6 +255,7 @@ export default function EditItemModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={formData.unit_price}
                 onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
+                placeholder="0.00"
               />
             </div>
 
@@ -329,7 +364,7 @@ export default function EditItemModal({
               type="submit"
               className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-lg transition-colors"
             >
-              Update Item
+              Add Item
             </button>
           </div>
         </form>
