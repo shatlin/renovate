@@ -13,17 +13,16 @@ import {
   CalendarDays, StickyNote, ChevronRight, CircleCheck, X,
   Bed, Bath, ChefHat, Tv, TreePine, Wind, Warehouse, FootprintsIcon
 } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import Navigation from '@/components/Navigation'
 import AddVendorModal from './AddVendorModal'
 import AddTimelineModal from './AddTimelineModal'
 import AddTimelineNote from './AddTimelineNote'
-import LinkBudgetModal from './LinkBudgetModal'
 import EditTimelineModal from './EditTimelineModal'
 import AddItemModal from './AddItemModal'
 import EditItemModal from './EditItemModal'
 import RoomsList from './RoomsList'
-import BudgetItemsList from './BudgetItemsList'
+import BudgetMasterDetailRow from '@/components/budget/BudgetMasterDetailRow'
 import VendorsList from './VendorsList'
 import ActionPlanModal from './ActionPlanModal'
 import BudgetItemNotesModal from './BudgetItemNotesModal'
@@ -47,8 +46,22 @@ interface Room {
   status: string
 }
 
-interface BudgetItem {
+interface BudgetMaster {
   id: number
+  name: string
+  description: string
+  status: string
+  room_id: number
+  room_name: string
+  total_estimated: number
+  total_actual: number
+  details?: BudgetDetail[]
+}
+
+interface BudgetDetail {
+  id: number
+  master_id: number
+  type: string
   name: string
   description: string
   quantity: number
@@ -57,10 +70,7 @@ interface BudgetItem {
   actual_cost: number
   vendor: string
   status: string
-  room_name: string
   category_name: string
-  category_icon: string
-  category_color: string
 }
 
 interface Category {
@@ -88,6 +98,7 @@ const iconMap: { [key: string]: any } = {
 }
 
 const getRoomIcon = (roomName: string) => {
+  if (!roomName) return { icon: DoorOpen, color: '#EC4899' } // Default if no name
   const name = roomName.toLowerCase()
   if (name.includes('kitchen')) return { icon: ChefHat, color: '#F97316' } // Orange
   if (name.includes('bathroom')) return { icon: Bath, color: '#06B6D4' } // Cyan
@@ -107,7 +118,7 @@ export default function ProjectDetailsPage() {
 
   const [project, setProject] = useState<Project | null>(null)
   const [rooms, setRooms] = useState<Room[]>([])
-  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([])
+  const [budgetMasters, setBudgetMasters] = useState<BudgetMaster[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [timeline, setTimeline] = useState<any[]>([])
@@ -116,15 +127,13 @@ export default function ProjectDetailsPage() {
   const [activeTab, setActiveTab] = useState('overview')
   const [showAddRoomModal, setShowAddRoomModal] = useState(false)
   const [showAddItemModal, setShowAddItemModal] = useState(false)
-  const [editingItem, setEditingItem] = useState<BudgetItem | null>(null)
-  const [notesItem, setNotesItem] = useState<BudgetItem | null>(null)
+  const [editingMaster, setEditingMaster] = useState<BudgetMaster | null>(null)
+  const [notesMaster, setNotesMaster] = useState<BudgetMaster | null>(null)
   const [showAddVendorModal, setShowAddVendorModal] = useState(false)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [showAddTimelineModal, setShowAddTimelineModal] = useState(false)
   const [selectedTimelineEntry, setSelectedTimelineEntry] = useState<any>(null)
-  const [showLinkBudgetModal, setShowLinkBudgetModal] = useState(false)
   const [showEditTimelineModal, setShowEditTimelineModal] = useState(false)
-  const [selectedTimelineForBudget, setSelectedTimelineForBudget] = useState<any>(null)
   const [editingTimelineEntry, setEditingTimelineEntry] = useState<any>(null)
   const [showActionPlanModal, setShowActionPlanModal] = useState(false)
   const [selectedEntryForActionPlan, setSelectedEntryForActionPlan] = useState<any>(null)
@@ -135,7 +144,7 @@ export default function ProjectDetailsPage() {
 
   const fetchProjectData = async () => {
     try {
-      const [projectRes, roomsRes, itemsRes, summaryRes, categoriesRes, vendorsRes, timelineRes] = await Promise.all([
+      const [projectRes, roomsRes, mastersRes, summaryRes, categoriesRes, vendorsRes, timelineRes] = await Promise.all([
         fetch(`/api/projects/${projectId}`),
         fetch(`/api/projects/${projectId}/rooms`),
         fetch(`/api/projects/${projectId}/budget-items`),
@@ -146,7 +155,7 @@ export default function ProjectDetailsPage() {
       ])
 
       // Check if responses are ok before parsing JSON
-      const responses = [projectRes, roomsRes, itemsRes, summaryRes, categoriesRes, vendorsRes, timelineRes]
+      const responses = [projectRes, roomsRes, mastersRes, summaryRes, categoriesRes, vendorsRes, timelineRes]
       const results = await Promise.all(
         responses.map(async (res) => {
           if (!res.ok) {
@@ -162,20 +171,20 @@ export default function ProjectDetailsPage() {
         })
       )
 
-      const [projectData, roomsData, itemsData, summaryData, categoriesData, vendorsData, timelineData] = results
+      const [projectData, roomsData, mastersData, summaryData, categoriesData, vendorsData, timelineData] = results
 
       setProject(projectData)
       setRooms(Array.isArray(roomsData) ? roomsData : [])
-      setBudgetItems(Array.isArray(itemsData) ? itemsData : [])
+      setBudgetMasters(Array.isArray(mastersData) ? mastersData : [])
       setSummary(summaryData)
       setCategories(Array.isArray(categoriesData) ? categoriesData : [])
       setVendors(Array.isArray(vendorsData) ? vendorsData : [])
       setTimeline(Array.isArray(timelineData) ? timelineData : [])
       
-      // Debug budget items
-      console.log('Budget items fetched:', itemsData?.length, 'items')
-      if (itemsData && itemsData.length > 0) {
-        console.log('Sample budget item:', itemsData[0])
+      // Debug budget masters
+      console.log('Budget masters fetched:', mastersData?.length, 'masters')
+      if (mastersData && mastersData.length > 0) {
+        console.log('Sample budget master:', mastersData[0])
       }
       
       // Debug vendors
@@ -208,17 +217,32 @@ export default function ProjectDetailsPage() {
     }
   }
 
-  const handleDeleteItem = async (itemId: number) => {
-    if (confirm('Are you sure you want to delete this item?')) {
+  const handleDeleteMaster = async (masterId: number) => {
+    if (confirm('Are you sure you want to delete this budget item and all its details?')) {
       try {
-        const response = await fetch(`/api/projects/${projectId}/budget-items/${itemId}`, {
+        const response = await fetch(`/api/projects/${projectId}/budget-masters/${masterId}`, {
           method: 'DELETE'
         })
         if (response.ok) {
           fetchProjectData()
         }
       } catch (error) {
-        console.error('Error deleting item:', error)
+        console.error('Error deleting master:', error)
+      }
+    }
+  }
+
+  const handleDeleteDetail = async (detailId: number) => {
+    if (confirm('Are you sure you want to delete this detail item?')) {
+      try {
+        const response = await fetch(`/api/budget-details/${detailId}`, {
+          method: 'DELETE'
+        })
+        if (response.ok) {
+          fetchProjectData()
+        }
+      } catch (error) {
+        console.error('Error deleting detail:', error)
       }
     }
   }
@@ -646,7 +670,7 @@ export default function ProjectDetailsPage() {
                     const percentage = budgetAllocated > 0 ? (cat.estimated_total / budgetAllocated) * 100 : 0
                     return (
                       <motion.div
-                        key={cat.category}
+                        key={cat.category || `category-${index}`}
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: 0.6 + index * 0.05 }}
@@ -758,10 +782,10 @@ export default function ProjectDetailsPage() {
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {summary?.byRoom?.map((room: any, index: number) => {
                     const roomPercentage = budgetAllocated > 0 ? (room.estimated_total / budgetAllocated) * 100 : 0
-                    const { icon: RoomIcon, color: roomColor } = getRoomIcon(room.room)
+                    const { icon: RoomIcon, color: roomColor } = getRoomIcon(room?.room || room?.room_name || 'Unknown')
                     return (
                       <motion.div
-                        key={room.room}
+                        key={room?.room || room?.room_name || `room-${index}`}
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: 0.8 + index * 0.05 }}
@@ -841,23 +865,58 @@ export default function ProjectDetailsPage() {
           <div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-semibold text-gray-900">Budget & Items</h2>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowAddItemModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-lg transition-all"
               >
                 <Plus className="w-4 h-4" />
-                Add Item
-              </button>
+                Add Budget Item
+              </motion.button>
             </div>
 
-            <BudgetItemsList
-              projectId={parseInt(projectId)}
-              budgetItems={budgetItems}
-              onEdit={(item) => setEditingItem(item)}
-              onDelete={handleDeleteItem}
-              onReorder={(items) => setBudgetItems(items)}
-              onViewNotes={(item) => setNotesItem(item)}
-            />
+            <div className="space-y-4">
+              <AnimatePresence>
+                {budgetMasters.length > 0 ? (
+                  budgetMasters.map((master, index) => (
+                    <BudgetMasterDetailRow
+                      key={master.id}
+                      item={master}
+                      onAddDetail={(masterId) => {
+                        // TODO: Implement add detail modal
+                        console.log('Add detail for master:', masterId)
+                      }}
+                      onEditMaster={setEditingMaster}
+                      onDeleteMaster={handleDeleteMaster}
+                      onEditDetail={(detail) => {
+                        // TODO: Implement edit detail modal
+                        console.log('Edit detail:', detail)
+                      }}
+                      onDeleteDetail={handleDeleteDetail}
+                    />
+                  ))
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-center py-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-dashed border-gray-300"
+                  >
+                    <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-600 mb-2">No Budget Items Yet</h3>
+                    <p className="text-gray-500 mb-6">Start by adding your first budget item</p>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setShowAddItemModal(true)}
+                      className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg shadow-lg hover:from-blue-700 hover:to-purple-700 transition-all"
+                    >
+                      Create First Budget Item
+                    </motion.button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         )}
 
@@ -990,74 +1049,20 @@ export default function ProjectDetailsPage() {
                             {/* Budget Summary */}
                             {(entry.planned_cost > 0 || entry.actual_cost > 0) && (
                               <div className="mt-3 bg-gray-50 rounded-lg p-3">
-                                <div className="flex justify-between items-center mb-2">
+                                <div className="mb-2">
                                   <span className="text-sm font-medium text-gray-700">Budget</span>
-                                  <button
-                                    onClick={async () => {
-                                      // Fetch existing linked items first
-                                      try {
-                                        const response = await fetch(`/api/projects/${projectId}/timeline/${entry.id}/budget-items`)
-                                        const linkedItems = await response.json()
-                                        setSelectedTimelineForBudget({ ...entry, budgetItems: linkedItems })
-                                      } catch (error) {
-                                        console.error('Error fetching linked items:', error)
-                                        setSelectedTimelineForBudget({ ...entry, budgetItems: [] })
-                                      }
-                                      setShowLinkBudgetModal(true)
-                                    }}
-                                    className="text-blue-600 hover:text-blue-700 text-sm"
-                                  >
-                                    Manage Items
-                                  </button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
                                     <span className="text-gray-600">Planned:</span>
-                                    <span className="ml-2 font-medium text-gray-900">${entry.planned_cost?.toLocaleString() || 0}</span>
+                                    <span className="ml-2 font-medium text-gray-900">R{entry.planned_cost?.toLocaleString() || 0}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-600">Actual:</span>
-                                    <span className="ml-2 font-medium text-gray-900">${entry.actual_cost?.toLocaleString() || 0}</span>
+                                    <span className="ml-2 font-medium text-gray-900">R{entry.actual_cost?.toLocaleString() || 0}</span>
                                   </div>
                                 </div>
-                                
-                                {entry.budgetItems && entry.budgetItems.length > 0 && (
-                                  <div className="mt-2 pt-2 border-t border-gray-200">
-                                    <div className="text-xs text-gray-600 mb-1">{entry.budgetItems.length} item(s) linked</div>
-                                    <div className="space-y-1">
-                                      {entry.budgetItems.slice(0, 3).map((item: any) => (
-                                        <div key={item.id} className="text-xs text-gray-700">
-                                          • {item.item_name} (${item.allocated_amount.toLocaleString()})
-                                        </div>
-                                      ))}
-                                      {entry.budgetItems.length > 3 && (
-                                        <div className="text-xs text-gray-500">+{entry.budgetItems.length - 3} more...</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
                               </div>
-                            )}
-                            
-                            {/* Add budget link button if no budget */}
-                            {!entry.planned_cost && !entry.actual_cost && (
-                              <button
-                                onClick={async () => {
-                                  // Fetch existing linked items first
-                                  try {
-                                    const response = await fetch(`/api/projects/${projectId}/timeline/${entry.id}/budget-items`)
-                                    const linkedItems = await response.json()
-                                    setSelectedTimelineForBudget({ ...entry, budgetItems: linkedItems })
-                                  } catch (error) {
-                                    console.error('Error fetching linked items:', error)
-                                    setSelectedTimelineForBudget({ ...entry, budgetItems: [] })
-                                  }
-                                  setShowLinkBudgetModal(true)
-                                }}
-                                className="mt-2 text-sm text-blue-600 hover:text-blue-700"
-                              >
-                                + Link Budget Items
-                              </button>
                             )}
                           </div>
                         </div>
@@ -1289,29 +1294,29 @@ export default function ProjectDetailsPage() {
         />
       )}
 
-      {/* Edit Item Modal */}
-      {editingItem && (
+      {/* Edit Master Modal */}
+      {editingMaster && (
         <EditItemModal
           projectId={parseInt(projectId)}
-          item={editingItem}
+          item={editingMaster}
           rooms={rooms}
           categories={categories}
           vendors={vendors}
-          onClose={() => setEditingItem(null)}
+          onClose={() => setEditingMaster(null)}
           onSuccess={() => {
-            setEditingItem(null)
+            setEditingMaster(null)
             fetchProjectData()
           }}
         />
       )}
 
-      {notesItem && (
+      {notesMaster && (
         <BudgetItemNotesModal
           projectId={parseInt(projectId)}
-          item={notesItem}
-          onClose={() => setNotesItem(null)}
+          item={notesMaster}
+          onClose={() => setNotesMaster(null)}
           onSave={(updatedItem) => {
-            fetchBudgetItems()
+            fetchProjectData()
           }}
         />
       )}
@@ -1343,22 +1348,6 @@ export default function ProjectDetailsPage() {
         />
       )}
 
-      {showLinkBudgetModal && selectedTimelineForBudget && (
-        <LinkBudgetModal
-          projectId={parseInt(projectId)}
-          timelineEntryId={selectedTimelineForBudget.id}
-          existingItems={selectedTimelineForBudget.budgetItems || []}
-          onClose={() => {
-            setShowLinkBudgetModal(false)
-            setSelectedTimelineForBudget(null)
-          }}
-          onSuccess={() => {
-            setShowLinkBudgetModal(false)
-            setSelectedTimelineForBudget(null)
-            fetchProjectData()
-          }}
-        />
-      )}
 
       {showEditTimelineModal && editingTimelineEntry && (
         <EditTimelineModal

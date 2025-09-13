@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:recalc": "node scripts/recalculate-master-totals.js",
+    "db:restore": "node scripts/restore-final-budget.js",
+    "db:backup": "cp renovation-budget.db renovation-budget.backup.db"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -14,20 +14,14 @@ export async function GET(
 
     const { id } = await params
     const db = getDb()
-    const entries = db.getTimelineByProject(parseInt(id))
     
-    // For each entry, get its notes and budget items
-    // Note: action_plan is already included in the entry from the database
-    const entriesWithDetails = entries.map((entry: any) => ({
-      ...entry,
-      notes: db.getTimelineNotes(entry.id),
-      budgetItems: db.getTimelineBudgetItems(entry.id)
-    }))
+    // Return empty array for now as we're transitioning to master-detail
+    const masters = []
     
-    return NextResponse.json(entriesWithDetails)
+    return NextResponse.json(masters)
   } catch (error) {
-    console.error('Error fetching timeline:', error)
-    return NextResponse.json({ error: 'Failed to fetch timeline' }, { status: 500 })
+    console.error('Error fetching budget masters:', error)
+    return NextResponse.json({ error: 'Failed to fetch budget masters' }, { status: 500 })
   }
 }
 
@@ -45,15 +39,20 @@ export async function POST(
     const data = await request.json()
     const db = getDb()
     
-    const entry = db.createTimelineEntry({
-      ...data,
+    const masterId = db.createBudgetMaster({
       project_id: parseInt(id),
-      status: data.status || 'planned'
+      name: data.name,
+      description: data.description || null,
+      room_id: data.room_id || null,
+      status: data.status || 'pending',
+      created_by: session.userId
     })
     
-    return NextResponse.json(entry, { status: 201 })
+    const master = db.getBudgetMasterById(masterId)
+    
+    return NextResponse.json(master, { status: 201 })
   } catch (error) {
-    console.error('Error creating timeline entry:', error)
-    return NextResponse.json({ error: 'Failed to create timeline entry' }, { status: 500 })
+    console.error('Error creating budget master:', error)
+    return NextResponse.json({ error: 'Failed to create budget master' }, { status: 500 })
   }
 }

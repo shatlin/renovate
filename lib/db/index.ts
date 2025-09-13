@@ -1,48 +1,87 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { SQLiteAdapter } from './adapters/sqlite.adapter';
 
-const DB_PATH = path.join(process.cwd(), 'renovate.db');
-const SCHEMA_PATH = path.join(process.cwd(), 'lib', 'db', 'schema.sql');
+export function getDb() {
+  return new SQLiteAdapter();
+}
 
-class DatabaseManager {
-  private db: Database.Database;
+export class SQLiteAdapter {
+  private db: any;
 
-  constructor() {
+  constructor(dbPath?: string) {
+    const Database = require('better-sqlite3');
+    const path = require('path');
+    const DB_PATH = dbPath || path.join(process.cwd(), 'renovation-budget.db');
     this.db = new Database(DB_PATH);
-    this.db.pragma('foreign_keys = ON');
-    this.initializeDatabase();
   }
 
-  private initializeDatabase() {
-    try {
-      const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-      this.db.exec(schema);
-    } catch (error) {
-      console.error('Error initializing database:', error);
-      throw error;
-    }
+  // User methods
+  getUser(email: string) {
+    return this.db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  }
+
+  getUserById(id: number) {
+    return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  }
+
+  createUser(email: string, hashedPassword: string, name: string) {
+    const stmt = this.db.prepare(
+      'INSERT INTO users (email, password, name) VALUES (?, ?, ?)'
+    );
+    const result = stmt.run(email, hashedPassword, name);
+    return this.getUserById(result.lastInsertRowid);
+  }
+
+  updateUser(id: number, data: any) {
+    const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
+    const stmt = this.db.prepare(`UPDATE users SET ${fields} WHERE id = @id`);
+    stmt.run({ ...data, id });
+    return this.getUserById(id);
+  }
+
+  // Session methods
+  createSession(userId: number, token: string, expiresAt: Date) {
+    const stmt = this.db.prepare(
+      'INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)'
+    );
+    stmt.run(userId, token, expiresAt.toISOString());
+  }
+
+  getSession(token: string) {
+    return this.db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
+  }
+
+  deleteSession(token: string) {
+    return this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+
+  cleanExpiredSessions() {
+    return this.db.prepare('DELETE FROM sessions WHERE expires_at < datetime("now")').run();
   }
 
   // Project methods
-  getAllProjects() {
-    return this.db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all();
+  getProjects(userId: number) {
+    return this.db.prepare(`
+      SELECT p.*, u.name as owner_name 
+      FROM projects p
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE p.user_id = ?
+      ORDER BY p.created_at DESC
+    `).all(userId);
   }
 
   getProject(id: number) {
-    return this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+    return this.db.prepare(`
+      SELECT p.*, u.name as owner_name 
+      FROM projects p
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE p.id = ?
+    `).get(id);
   }
 
-  createProject(data: {
-    name: string;
-    description?: string;
-    total_budget?: number;
-    start_date?: string;
-    target_end_date?: string;
-  }) {
+  createProject(data: any) {
     const stmt = this.db.prepare(`
-      INSERT INTO projects (name, description, total_budget, start_date, target_end_date)
-      VALUES (@name, @description, @total_budget, @start_date, @target_end_date)
+      INSERT INTO projects (user_id, name, description, total_budget, start_date, target_end_date, status)
+      VALUES (@user_id, @name, @description, @total_budget, @start_date, @target_end_date, @status)
     `);
     const result = stmt.run(data);
     return this.getProject(result.lastInsertRowid as number);
@@ -50,9 +89,7 @@ class DatabaseManager {
 
   updateProject(id: number, data: any) {
     const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
-    const stmt = this.db.prepare(`
-      UPDATE projects SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = @id
-    `);
+    const stmt = this.db.prepare(`UPDATE projects SET ${fields} WHERE id = @id`);
     stmt.run({ ...data, id });
     return this.getProject(id);
   }
@@ -63,40 +100,21 @@ class DatabaseManager {
 
   // Room methods
   getRoomsByProject(projectId: number) {
-    const rooms = this.db.prepare(`
-      SELECT 
-        r.*,
-        COALESCE(SUM(CASE WHEN bi.estimated_cost IS NOT NULL THEN bi.estimated_cost ELSE 0 END), 0) as estimated_budget,
-        COALESCE(SUM(CASE WHEN bi.actual_cost IS NOT NULL THEN bi.actual_cost ELSE 0 END), 0) as actual_cost,
-        COUNT(bi.id) as item_count
-      FROM rooms r
-      LEFT JOIN budget_items bi ON r.id = bi.room_id
-      WHERE r.project_id = ?
-      GROUP BY r.id
-      ORDER BY r.display_order, r.name
+    return this.db.prepare(`
+      SELECT * FROM rooms 
+      WHERE project_id = ? 
+      ORDER BY created_at DESC
     `).all(projectId);
-    
-    // Add _count property for compatibility
-    return rooms.map(room => ({
-      ...room,
-      _count: { items: room.item_count }
-    }));
   }
 
   getRoom(id: number) {
     return this.db.prepare('SELECT * FROM rooms WHERE id = ?').get(id);
   }
 
-  createRoom(data: {
-    project_id: number;
-    name: string;
-    area_sqft?: number;
-    renovation_type?: string;
-    status?: string;
-  }) {
+  createRoom(data: any) {
     const stmt = this.db.prepare(`
-      INSERT INTO rooms (project_id, name, area_sqft, renovation_type, status)
-      VALUES (@project_id, @name, @area_sqft, @renovation_type, @status)
+      INSERT INTO rooms (project_id, name, description, allocated_budget)
+      VALUES (@project_id, @name, @description, @allocated_budget)
     `);
     const result = stmt.run(data);
     return this.getRoom(result.lastInsertRowid as number);
@@ -104,9 +122,7 @@ class DatabaseManager {
 
   updateRoom(id: number, data: any) {
     const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
-    const stmt = this.db.prepare(`
-      UPDATE rooms SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = @id
-    `);
+    const stmt = this.db.prepare(`UPDATE rooms SET ${fields} WHERE id = @id`);
     stmt.run({ ...data, id });
     return this.getRoom(id);
   }
@@ -115,44 +131,250 @@ class DatabaseManager {
     return this.db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
   }
 
-  // Budget item methods
-  getBudgetItemsByProject(projectId: number) {
-    const items = this.db.prepare(`
-      SELECT bi.*, r.name as room_name, c.name as category_name, c.icon as category_icon, c.color as category_color
+
+  // Project Summary methods
+  getProjectSummary(projectId: number) {
+    const summary = this.db.prepare(`
+      SELECT 
+        COUNT(DISTINCT bi.id) as total_items,
+        COUNT(DISTINCT bi.room_id) as rooms_count,
+        COALESCE(SUM(bi.estimated_cost), 0) as total_estimated,
+        COALESCE(SUM(bi.actual_cost), 0) as total_actual
+      FROM budget_items bi
+      WHERE bi.project_id = ?
+    `).get(projectId);
+
+    const byRoom = this.db.prepare(`
+      SELECT 
+        r.id, 
+        r.name as room,
+        r.name as room_name, 
+        COALESCE(r.allocated_budget, 0) as allocated_budget,
+        COUNT(bi.id) as item_count,
+        COALESCE(SUM(bi.estimated_cost), 0) as estimated_total,
+        COALESCE(SUM(bi.actual_cost), 0) as actual_total
+      FROM rooms r
+      LEFT JOIN budget_items bi ON r.id = bi.room_id AND bi.project_id = ?
+      WHERE r.project_id = ?
+      GROUP BY r.id, r.name, r.allocated_budget
+      ORDER BY r.name
+    `).all(projectId, projectId);
+
+    const byCategory = this.db.prepare(`
+      SELECT 
+        COALESCE(c.id, 0) as id,
+        COALESCE(c.name, 'Uncategorized') as category,
+        COALESCE(c.icon, 'MoreHorizontal') as icon,
+        COALESCE(c.color, '#6B7280') as color,
+        COUNT(bi.id) as item_count,
+        COALESCE(SUM(bi.estimated_cost), 0) as estimated_total,
+        COALESCE(SUM(bi.actual_cost), 0) as actual_total
+      FROM budget_items bi
+      LEFT JOIN categories c ON bi.category_id = c.id
+      WHERE bi.project_id = ?
+      GROUP BY c.id, c.name, c.icon, c.color
+      HAVING item_count > 0
+      ORDER BY estimated_total DESC
+    `).all(projectId);
+
+    const byType = this.db.prepare(`
+      SELECT 
+        bd.detail_type as type,
+        COUNT(bd.id) as items_count,
+        COALESCE(SUM(bd.total_amount), 0) as estimated,
+        0 as actual
+      FROM budget_details bd
+      JOIN budget_items bi ON bd.budget_item_id = bi.id
+      WHERE bi.project_id = ?
+      GROUP BY bd.detail_type
+      ORDER BY estimated DESC
+    `).all(projectId);
+
+    return { summary, byRoom, byCategory, byType };
+  }
+
+  // Category methods
+  getCategories() {
+    return this.db.prepare('SELECT * FROM categories ORDER BY name').all();
+  }
+
+  // Vendor methods
+  getVendorsByProject(projectId: number) {
+    return this.db.prepare(`
+      SELECT * FROM vendors 
+      WHERE project_id = ? 
+      ORDER BY created_at DESC
+    `).all(projectId);
+  }
+
+  getVendor(id: number) {
+    return this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(id);
+  }
+
+  createVendor(data: any) {
+    const stmt = this.db.prepare(`
+      INSERT INTO vendors (project_id, name, contact_person, phone, email, address, specialization, rating, notes)
+      VALUES (@project_id, @name, @contact_person, @phone, @email, @address, @specialization, @rating, @notes)
+    `);
+    const result = stmt.run(data);
+    return this.getVendor(result.lastInsertRowid as number);
+  }
+
+  updateVendor(id: number, data: any) {
+    const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
+    const stmt = this.db.prepare(`UPDATE vendors SET ${fields} WHERE id = @id`);
+    stmt.run({ ...data, id });
+    return this.getVendor(id);
+  }
+
+  deleteVendor(id: number) {
+    return this.db.prepare('DELETE FROM vendors WHERE id = ?').run(id);
+  }
+
+  // Timeline methods
+  getTimelineByProject(projectId: number) {
+    const entries = this.db.prepare(`
+      SELECT * FROM timeline_entries 
+      WHERE project_id = ? 
+      ORDER BY start_date, created_at
+    `).all(projectId);
+
+    // Get budget items for each timeline entry
+    return entries.map((entry: any) => {
+      const budgetItems = this.db.prepare(`
+        SELECT bi.*, r.name as room_name
+        FROM timeline_budget_items tbi
+        JOIN budget_items bi ON tbi.budget_item_id = bi.id
+        LEFT JOIN rooms r ON bi.room_id = r.id
+        WHERE tbi.timeline_entry_id = ?
+      `).all(entry.id);
+
+      return { ...entry, budgetItems };
+    });
+  }
+
+  getTimelineEntry(id: number) {
+    return this.db.prepare('SELECT * FROM timeline_entries WHERE id = ?').get(id);
+  }
+
+  createTimelineEntry(data: any) {
+    const stmt = this.db.prepare(`
+      INSERT INTO timeline_entries (
+        project_id, title, description, start_date, end_date, 
+        status, milestone, dependencies, assigned_to, progress_percentage
+      )
+      VALUES (
+        @project_id, @title, @description, @start_date, @end_date,
+        @status, @milestone, @dependencies, @assigned_to, @progress_percentage
+      )
+    `);
+    const result = stmt.run({
+      ...data,
+      milestone: data.milestone ? 1 : 0,
+      progress_percentage: data.progress_percentage || 0
+    });
+    return this.getTimelineEntry(result.lastInsertRowid as number);
+  }
+
+  updateTimelineEntry(id: number, data: any) {
+    const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
+    const stmt = this.db.prepare(`
+      UPDATE timeline_entries SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = @id
+    `);
+    stmt.run({ ...data, id });
+    return this.getTimelineEntry(id);
+  }
+
+  deleteTimelineEntry(id: number) {
+    return this.db.prepare('DELETE FROM timeline_entries WHERE id = ?').run(id);
+  }
+
+  // Timeline-Budget linking methods
+  linkBudgetToTimeline(timelineEntryId: number, budgetItemIds: number[]) {
+    // First, remove existing links
+    this.db.prepare('DELETE FROM timeline_budget_items WHERE timeline_entry_id = ?').run(timelineEntryId);
+    
+    // Then add new links
+    const stmt = this.db.prepare(`
+      INSERT INTO timeline_budget_items (timeline_entry_id, budget_item_id)
+      VALUES (?, ?)
+    `);
+    
+    for (const budgetItemId of budgetItemIds) {
+      stmt.run(timelineEntryId, budgetItemId);
+    }
+  }
+
+  getTimelineBudgetItems(timelineEntryId: number) {
+    return this.db.prepare(`
+      SELECT bi.*, r.name as room_name
+      FROM timeline_budget_items tbi
+      JOIN budget_items bi ON tbi.budget_item_id = bi.id
+      LEFT JOIN rooms r ON bi.room_id = r.id
+      WHERE tbi.timeline_entry_id = ?
+    `).all(timelineEntryId);
+  }
+
+  // Timeline Notes methods
+  getTimelineNotes(timelineEntryId: number) {
+    return this.db.prepare(`
+      SELECT tn.*
+      FROM timeline_notes tn
+      WHERE tn.timeline_entry_id = ?
+      ORDER BY tn.created_at DESC
+    `).all(timelineEntryId);
+  }
+
+  createTimelineNote(data: any) {
+    const stmt = this.db.prepare(`
+      INSERT INTO timeline_notes (timeline_entry_id, content, author)
+      VALUES (@timeline_entry_id, @content, @author)
+    `);
+    const result = stmt.run({
+      timeline_entry_id: data.timeline_entry_id,
+      content: data.note || data.content,
+      author: data.author || null
+    });
+    return this.db.prepare(`
+      SELECT * FROM timeline_notes WHERE id = ?
+    `).get(result.lastInsertRowid);
+  }
+
+  deleteTimelineNote(id: number) {
+    return this.db.prepare('DELETE FROM timeline_notes WHERE id = ?').run(id);
+  }
+
+  // Budget Items methods (now master records)
+  getBudgetItems(projectId: number) {
+    return this.db.prepare(`
+      SELECT 
+        bi.*,
+        r.name as room_name,
+        c.name as category_name,
+        c.icon as category_icon,
+        c.color as category_color,
+        COALESCE(bi.total_material, 0) as total_material,
+        COALESCE(bi.total_labour, 0) as total_labour,
+        COALESCE(bi.total_service, 0) as total_service,
+        COALESCE(bi.total_other, 0) as total_other,
+        COALESCE(bi.total_new_item, 0) as total_new_item,
+        (SELECT COUNT(*) FROM budget_details WHERE budget_item_id = bi.id) as detail_count
       FROM budget_items bi
       LEFT JOIN rooms r ON bi.room_id = r.id
       LEFT JOIN categories c ON bi.category_id = c.id
       WHERE bi.project_id = ?
-      ORDER BY bi.created_at DESC
+      ORDER BY bi.display_order, bi.created_at DESC
     `).all(projectId);
-    
-    // Get timeline references for each item
-    return items.map((item: any) => {
-      const timelineRefs = this.db.prepare(`
-        SELECT te.id, te.title, te.start_date, te.end_date
-        FROM timeline_budget_items tbi
-        JOIN timeline_entries te ON tbi.timeline_entry_id = te.id
-        WHERE tbi.budget_item_id = ?
-        ORDER BY te.start_date
-      `).all(item.id);
-      
-      return { ...item, timeline_refs: timelineRefs };
-    });
-  }
-
-  getBudgetItemsByRoom(roomId: number) {
-    return this.db.prepare(`
-      SELECT bi.*, c.name as category_name, c.icon as category_icon, c.color as category_color
-      FROM budget_items bi
-      LEFT JOIN categories c ON bi.category_id = c.id
-      WHERE bi.room_id = ?
-      ORDER BY bi.created_at DESC
-    `).all(roomId);
   }
 
   getBudgetItem(id: number) {
     return this.db.prepare(`
-      SELECT bi.*, r.name as room_name, c.name as category_name, c.icon as category_icon, c.color as category_color
+      SELECT 
+        bi.*,
+        r.name as room_name,
+        c.name as category_name,
+        c.icon as category_icon,
+        c.color as category_color
       FROM budget_items bi
       LEFT JOIN rooms r ON bi.room_id = r.id
       LEFT JOIN categories c ON bi.category_id = c.id
@@ -160,59 +382,27 @@ class DatabaseManager {
     `).get(id);
   }
 
-  createBudgetItem(data: {
-    project_id: number;
-    room_id?: number | null;
-    category_id?: number | null;
-    name: string;
-    description?: string | null;
-    quantity?: number;
-    unit_price?: number;
-    estimated_cost?: number;
-    actual_cost?: number | null;
-    vendor?: string | null;
-    notes?: string | null;
-    long_notes?: string | null;
-    status?: string;
-    type?: string;
-  }) {
+  createBudgetItem(data: any) {
     const stmt = this.db.prepare(`
       INSERT INTO budget_items (
-        project_id, room_id, category_id, name, description, 
-        quantity, unit_price, estimated_cost, actual_cost, vendor, notes, long_notes, status
-      )
-      VALUES (
+        project_id, room_id, category_id, name, description,
+        is_master, status, display_order
+      ) VALUES (
         @project_id, @room_id, @category_id, @name, @description,
-        @quantity, @unit_price, @estimated_cost, @actual_cost, @vendor, @notes, @long_notes, @status
+        1, @status, @display_order
       )
     `);
-    
-    // Ensure all parameters have default values
-    const params = {
-      project_id: data.project_id,
-      room_id: data.room_id || null,
-      category_id: data.category_id || null,
-      name: data.name,
-      description: data.description || null,
-      quantity: data.quantity || 1,
-      unit_price: data.unit_price || 0,
-      estimated_cost: data.estimated_cost || 0,
-      actual_cost: data.actual_cost || null,
-      vendor: data.vendor || null,
-      notes: data.notes || null,
-      long_notes: data.long_notes || null,
-      status: data.status || 'pending'
-    };
-    
-    const result = stmt.run(params);
+    const result = stmt.run({
+      ...data,
+      status: data.status || 'pending',
+      display_order: data.display_order || 0
+    });
     return this.getBudgetItem(result.lastInsertRowid as number);
   }
 
   updateBudgetItem(id: number, data: any) {
     const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
-    const stmt = this.db.prepare(`
-      UPDATE budget_items SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = @id
-    `);
+    const stmt = this.db.prepare(`UPDATE budget_items SET ${fields} WHERE id = @id`);
     stmt.run({ ...data, id });
     return this.getBudgetItem(id);
   }
@@ -221,366 +411,108 @@ class DatabaseManager {
     return this.db.prepare('DELETE FROM budget_items WHERE id = ?').run(id);
   }
 
-  // Budget Item Notes methods
-  getBudgetItemNotes(budgetItemId: number) {
+  // Budget Details methods
+  getBudgetDetails(budgetItemId: number) {
     return this.db.prepare(`
-      SELECT bin.*, u.name as created_by_name
-      FROM budget_item_notes bin
-      LEFT JOIN users u ON bin.created_by = u.id
-      WHERE bin.budget_item_id = ?
-      ORDER BY bin.created_at DESC
+      SELECT * FROM budget_details 
+      WHERE budget_item_id = ? 
+      ORDER BY display_order, created_at
     `).all(budgetItemId);
   }
 
-  createBudgetItemNote(data: {
-    budget_item_id: number;
-    note: string;
-    created_by?: number;
-  }) {
-    const stmt = this.db.prepare(`
-      INSERT INTO budget_item_notes (budget_item_id, note, created_by)
-      VALUES (@budget_item_id, @note, @created_by)
-    `);
-    const result = stmt.run(data);
-    return this.db.prepare(`
-      SELECT bin.*, u.name as created_by_name
-      FROM budget_item_notes bin
-      LEFT JOIN users u ON bin.created_by = u.id
-      WHERE bin.id = ?
-    `).get(result.lastInsertRowid);
+  getBudgetDetail(id: number) {
+    return this.db.prepare('SELECT * FROM budget_details WHERE id = ?').get(id);
   }
 
-  updateBudgetItemNote(id: number, note: string) {
-    const stmt = this.db.prepare(`
-      UPDATE budget_item_notes 
-      SET note = @note, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = @id
-    `);
-    stmt.run({ note, id });
-    return this.db.prepare(`
-      SELECT bin.*, u.name as created_by_name
-      FROM budget_item_notes bin
-      LEFT JOIN users u ON bin.created_by = u.id
-      WHERE bin.id = ?
-    `).get(id);
-  }
-
-  deleteBudgetItemNote(id: number) {
-    return this.db.prepare('DELETE FROM budget_item_notes WHERE id = ?').run(id);
-  }
-
-  // Category methods
-  getAllCategories() {
-    return this.db.prepare('SELECT * FROM categories ORDER BY name').all();
-  }
-
-  // Summary methods
-  getProjectSummary(projectId: number) {
-    const summary = this.db.prepare(`
-      SELECT 
-        COUNT(DISTINCT bi.id) as total_items,
-        COUNT(DISTINCT bi.room_id) as total_rooms,
-        SUM(bi.estimated_cost) as total_estimated,
-        SUM(bi.actual_cost) as total_actual,
-        SUM(CASE WHEN bi.status = 'purchased' THEN bi.actual_cost ELSE 0 END) as total_purchased
-      FROM budget_items bi
-      WHERE bi.project_id = ?
-    `).get(projectId);
-
-    const byCategory = this.db.prepare(`
-      SELECT 
-        c.name as category,
-        c.icon,
-        c.color,
-        COUNT(bi.id) as item_count,
-        SUM(bi.estimated_cost) as estimated_total,
-        SUM(bi.actual_cost) as actual_total
-      FROM budget_items bi
-      LEFT JOIN categories c ON bi.category_id = c.id
-      WHERE bi.project_id = ?
-      GROUP BY bi.category_id
-      ORDER BY estimated_total DESC
-    `).all(projectId);
-
-    const byRoom = this.db.prepare(`
-      SELECT 
-        r.name as room,
-        r.allocated_budget,
-        COUNT(bi.id) as item_count,
-        SUM(bi.estimated_cost) as estimated_total,
-        SUM(bi.actual_cost) as actual_total
-      FROM rooms r
-      LEFT JOIN budget_items bi ON r.id = bi.room_id
-      WHERE r.project_id = ?
-      GROUP BY r.id
-      ORDER BY r.name
-    `).all(projectId);
-
-    return { summary, byCategory, byRoom };
-  }
-
-  // Vendor methods
-  getVendorsByProject(projectId: number) {
-    return this.db.prepare('SELECT * FROM vendors WHERE project_id = ? ORDER BY display_order, name').all(projectId);
-  }
-
-  createVendor(data: any) {
-    // Get the max display_order for this project
-    const maxOrder = this.db.prepare(
-      'SELECT MAX(display_order) as max_order FROM vendors WHERE project_id = ?'
-    ).get(data.project_id) as any;
-    
-    const display_order = (maxOrder?.max_order ?? -1) + 1;
-    
-    const stmt = this.db.prepare(`
-      INSERT INTO vendors (project_id, name, company, phone, email, specialization, rating, notes, display_order)
-      VALUES (@project_id, @name, @company, @phone, @email, @specialization, @rating, @notes, @display_order)
-    `);
-    const result = stmt.run({ ...data, display_order });
-    return this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(result.lastInsertRowid);
-  }
-  
-  updateVendor(vendorId: number, data: any) {
-    const stmt = this.db.prepare(`
-      UPDATE vendors 
-      SET name = @name, 
-          company = @company, 
-          phone = @phone, 
-          email = @email, 
-          specialization = @specialization, 
-          rating = @rating, 
-          notes = @notes
-      WHERE id = @id
-    `);
-    const result = stmt.run({ ...data, id: vendorId });
-    if (result.changes === 0) {
-      return null;
-    }
-    return this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendorId);
-  }
-  
-  deleteVendor(vendorId: number) {
-    const stmt = this.db.prepare('DELETE FROM vendors WHERE id = ?');
-    const result = stmt.run(vendorId);
-    return result.changes > 0;
-  }
-
-  // Payment methods
-  getPaymentsByProject(projectId: number) {
-    return this.db.prepare(`
-      SELECT p.*, c.name as contractor_name
-      FROM payments p
-      LEFT JOIN contractors c ON p.contractor_id = c.id
-      WHERE p.project_id = ?
-      ORDER BY p.payment_date DESC
-    `).all(projectId);
-  }
-
-  createPayment(data: any) {
-    const stmt = this.db.prepare(`
-      INSERT INTO payments (project_id, contractor_id, amount, payment_date, payment_method, reference_number, notes)
-      VALUES (@project_id, @contractor_id, @amount, @payment_date, @payment_method, @reference_number, @notes)
-    `);
-    const result = stmt.run(data);
-    return this.db.prepare('SELECT * FROM payments WHERE id = ?').get(result.lastInsertRowid);
-  }
-
-  // Notes methods
-  getNotesByProject(projectId: number) {
-    return this.db.prepare('SELECT * FROM project_notes WHERE project_id = ? ORDER BY created_at DESC').all(projectId);
-  }
-
-  createNote(data: { project_id: number; title?: string; content: string }) {
-    const stmt = this.db.prepare(`
-      INSERT INTO project_notes (project_id, title, content)
-      VALUES (@project_id, @title, @content)
-    `);
-    const result = stmt.run(data);
-    return this.db.prepare('SELECT * FROM project_notes WHERE id = ?').get(result.lastInsertRowid);
-  }
-
-  // Timeline methods
-  getTimelineEntries(projectId: number) {
-    return this.db.prepare(`
-      SELECT te.*, 
-        (SELECT COUNT(*) FROM timeline_notes WHERE timeline_entry_id = te.id) as notes_count,
-        (SELECT COALESCE(SUM(allocated_amount), 0) FROM timeline_budget_items WHERE timeline_entry_id = te.id) as planned_cost,
-        (SELECT COALESCE(SUM(actual_amount), 0) FROM timeline_budget_items WHERE timeline_entry_id = te.id) as actual_cost,
-        (end_day - start_day + 1) as duration
-      FROM timeline_entries te 
-      WHERE project_id = ? 
-      ORDER BY start_day
-    `).all(projectId);
-  }
-
-  createTimelineEntry(data: any) {
-    const stmt = this.db.prepare(`
-      INSERT INTO timeline_entries (project_id, start_day, end_day, start_date, end_date, title, description, status)
-      VALUES (@project_id, @start_day, @end_day, @start_date, @end_date, @title, @description, @status)
-    `);
-    const entryData = {
-      ...data,
-      end_day: data.end_day || data.start_day,
-      end_date: data.end_date || data.start_date || null
-    };
-    const result = stmt.run(entryData);
-    return this.db.prepare('SELECT * FROM timeline_entries WHERE id = ?').get(result.lastInsertRowid);
-  }
-
-  updateTimelineEntry(entryId: number, data: any) {
-    const stmt = this.db.prepare(`
-      UPDATE timeline_entries 
-      SET start_day = @start_day, 
-          end_day = @end_day,
-          start_date = @start_date, 
-          end_date = @end_date,
-          title = @title, 
-          description = @description, 
-          status = @status,
-          updated_at = datetime('now')
-      WHERE id = @id
-    `);
-    const entryData = {
-      ...data,
-      end_day: data.end_day || data.start_day,
-      end_date: data.end_date || data.start_date || null,
-      id: entryId
-    };
-    const result = stmt.run(entryData);
-    if (result.changes === 0) {
-      return null;
-    }
-    return this.db.prepare('SELECT * FROM timeline_entries WHERE id = ?').get(entryId);
-  }
-
-  deleteTimelineEntry(entryId: number) {
-    const stmt = this.db.prepare('DELETE FROM timeline_entries WHERE id = ?');
-    const result = stmt.run(entryId);
-    return result.changes > 0;
-  }
-
-  // Timeline notes methods
-  getTimelineNotes(entryId: number) {
-    return this.db.prepare('SELECT * FROM timeline_notes WHERE timeline_entry_id = ? ORDER BY created_at DESC').all(entryId);
-  }
-
-  addTimelineNote(data: any) {
-    const stmt = this.db.prepare(`
-      INSERT INTO timeline_notes (timeline_entry_id, content, author)
-      VALUES (@timeline_entry_id, @content, @author)
-    `);
-    const result = stmt.run(data);
-    return this.db.prepare('SELECT * FROM timeline_notes WHERE id = ?').get(result.lastInsertRowid);
-  }
-
-  deleteTimelineNote(noteId: number) {
-    const stmt = this.db.prepare('DELETE FROM timeline_notes WHERE id = ?');
-    const result = stmt.run(noteId);
-    return result.changes > 0;
-  }
-
-  // Timeline-Budget linking methods
-  linkBudgetToTimeline(timelineEntryId: number, budgetItemId: number, allocatedAmount: number, actualAmount: number = 0, notes?: string) {
-    const stmt = this.db.prepare(`
-      INSERT INTO timeline_budget_items (timeline_entry_id, budget_item_id, allocated_amount, actual_amount, notes)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(timeline_entry_id, budget_item_id) 
-      DO UPDATE SET 
-        allocated_amount = excluded.allocated_amount,
-        actual_amount = excluded.actual_amount,
-        notes = excluded.notes
-    `);
-    return stmt.run(timelineEntryId, budgetItemId, allocatedAmount, actualAmount, notes || null);
-  }
-
-  getTimelineBudgetItems(timelineEntryId: number) {
-    return this.db.prepare(`
-      SELECT tbi.*, bi.name as item_name, bi.description, 
-             r.name as room_name, c.name as category_name
-      FROM timeline_budget_items tbi
-      JOIN budget_items bi ON tbi.budget_item_id = bi.id
-      LEFT JOIN rooms r ON bi.room_id = r.id
-      LEFT JOIN categories c ON bi.category_id = c.id
-      WHERE tbi.timeline_entry_id = ?
-    `).all(timelineEntryId);
-  }
-
-  unlinkBudgetFromTimeline(timelineEntryId: number, budgetItemId: number) {
-    return this.db.prepare(`
-      DELETE FROM timeline_budget_items 
-      WHERE timeline_entry_id = ? AND budget_item_id = ?
-    `).run(timelineEntryId, budgetItemId);
-  }
-
-  updateTimelineEntry(id: number, data: any) {
-    const stmt = this.db.prepare(`
-      UPDATE timeline_entries 
-      SET start_day = ?, end_day = ?, start_date = ?, end_date = ?, title = ?, description = ?, status = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `);
-    return stmt.run(
-      data.start_day, 
-      data.end_day || data.start_day, 
-      data.start_date || null, 
-      data.end_date || data.start_date || null, 
-      data.title, 
-      data.description, 
-      data.status, 
-      id
+  createBudgetDetail(budgetItemId: number, detail: any) {
+    const result = this.db.prepare(`
+      INSERT INTO budget_details (
+        budget_item_id, detail_type, name, description, 
+        quantity, unit_price, total_amount, vendor, 
+        purchase_date, invoice_number, notes, display_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      budgetItemId,
+      detail.detail_type,
+      detail.name,
+      detail.description,
+      detail.quantity || 1,
+      detail.unit_price || 0,
+      detail.total_amount || (detail.quantity || 1) * (detail.unit_price || 0),
+      detail.vendor,
+      detail.purchase_date,
+      detail.invoice_number,
+      detail.notes,
+      detail.display_order || 0
     );
+    
+    return this.getBudgetDetail(result.lastInsertRowid as number);
   }
 
-  updateBudgetItem(itemId: number, data: any) {
-    const stmt = this.db.prepare(`
-      UPDATE budget_items 
-      SET name = ?, description = ?, quantity = ?, unit_price = ?, 
-          estimated_cost = ?, actual_cost = ?, vendor = ?, status = ?,
-          room_id = ?, category_id = ?
-      WHERE id = ?
-    `);
-    const result = stmt.run(
-      data.name, data.description, data.quantity, data.unit_price,
-      data.estimated_cost, data.actual_cost, data.vendor, data.status,
-      data.room_id, data.category_id, itemId
-    );
-    if (result.changes === 0) {
-      return null;
+  updateBudgetDetail(detailId: number, updates: any) {
+    const fields = [];
+    const values = [];
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (key !== 'id' && key !== 'budget_item_id') {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
     }
-    return this.db.prepare('SELECT * FROM budget_items WHERE id = ?').get(itemId);
+    
+    if (fields.length === 0) return null;
+    
+    // Recalculate total_amount if quantity or unit_price changed
+    if (updates.quantity !== undefined || updates.unit_price !== undefined) {
+      const current = this.db.prepare('SELECT quantity, unit_price FROM budget_details WHERE id = ?').get(detailId) as any;
+      const quantity = updates.quantity ?? current.quantity;
+      const unitPrice = updates.unit_price ?? current.unit_price;
+      fields.push('total_amount = ?');
+      values.push(quantity * unitPrice);
+    }
+    
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(detailId);
+    
+    this.db.prepare(`
+      UPDATE budget_details 
+      SET ${fields.join(', ')} 
+      WHERE id = ?
+    `).run(...values);
+    
+    return this.getBudgetDetail(detailId);
   }
 
-  deleteBudgetItem(itemId: number) {
-    const stmt = this.db.prepare('DELETE FROM budget_items WHERE id = ?');
-    const result = stmt.run(itemId);
+  deleteBudgetDetail(detailId: number) {
+    const result = this.db.prepare('DELETE FROM budget_details WHERE id = ?').run(detailId);
     return result.changes > 0;
   }
 
-  // User methods
-  getUser(userId: number) {
-    return this.db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId);
+  // User Settings methods
+  getUserSettings(userId: number) {
+    let settings = this.db.prepare('SELECT * FROM user_settings WHERE user_id = ?').get(userId);
+    
+    if (!settings) {
+      // Create default settings
+      this.db.prepare(`
+        INSERT INTO user_settings (user_id) VALUES (?)
+      `).run(userId);
+      settings = this.db.prepare('SELECT * FROM user_settings WHERE user_id = ?').get(userId);
+    }
+    
+    return settings;
   }
 
-  updateUser(userId: number, data: { name?: string; currency?: string }) {
+  updateUserSettings(userId: number, data: any) {
     const fields = Object.keys(data).map(key => `${key} = @${key}`).join(', ');
     const stmt = this.db.prepare(`
-      UPDATE users SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = @id
+      UPDATE user_settings SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE user_id = @user_id
     `);
-    stmt.run({ ...data, id: userId });
-    return this.getUser(userId);
+    stmt.run({ ...data, user_id: userId });
+    return this.getUserSettings(userId);
   }
 
   close() {
     this.db.close();
   }
 }
-
-let dbInstance: DatabaseManager | null = null;
-
-export function getDb(): DatabaseManager {
-  if (!dbInstance) {
-    dbInstance = new DatabaseManager();
-  }
-  return dbInstance;
-}
-
-export default DatabaseManager;

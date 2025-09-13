@@ -3,7 +3,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
-const db = new Database('renovation.db');
+const db = new Database('renovation-budget.db');
 
 // Helper function to parse CSV values
 function parseValue(value) {
