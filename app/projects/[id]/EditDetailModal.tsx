@@ -2,16 +2,28 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
+import { 
   X, Package, HardHat, Wrench, ShoppingCart, 
   MoreHorizontal, Save, Hash, DollarSign,
-  FileText, Calculator, Building2, Sparkles, 
+  FileText, Calculator, Building2, Edit3,
   Tag, Layers
 } from 'lucide-react'
 
-interface AddDetailModalProps {
+interface BudgetDetail {
+  id: number
+  detail_type: 'material' | 'labour' | 'service' | 'other' | 'new_item'
+  name: string
+  description?: string
+  quantity: number
+  unit_price: number
+  total_amount: number
+  vendor?: string
+  notes?: string
+}
+
+interface EditDetailModalProps {
   isOpen: boolean
-  masterId: number
+  detail: BudgetDetail | null
   masterName: string
   onClose: () => void
   onSuccess: () => void
@@ -25,13 +37,13 @@ const detailTypes = [
   { value: 'other', label: 'Other', icon: MoreHorizontal, color: 'from-gray-500 to-slate-500', bgColor: 'from-gray-50 to-slate-50', borderColor: 'border-gray-200' }
 ]
 
-export default function AddDetailModal({
-  isOpen,
-  masterId,
+export default function EditDetailModal({ 
+  isOpen, 
+  detail,
   masterName,
-  onClose,
-  onSuccess
-}: AddDetailModalProps) {
+  onClose, 
+  onSuccess 
+}: EditDetailModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const [formData, setFormData] = useState({
     detail_type: 'material',
@@ -42,9 +54,22 @@ export default function AddDetailModal({
     vendor: '',
     notes: ''
   })
-
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedType = detailTypes.find(t => t.value === formData.detail_type)
+
+  useEffect(() => {
+    if (detail) {
+      setFormData({
+        detail_type: detail.detail_type || 'material',
+        name: detail.name || '',
+        description: detail.description || '',
+        quantity: detail.quantity || 1,
+        unit_price: detail.unit_price || 0,
+        vendor: detail.vendor || '',
+        notes: detail.notes || ''
+      })
+    }
+  }, [detail])
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -74,47 +99,35 @@ export default function AddDetailModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!detail) return
+    
     setIsSubmitting(true)
 
     try {
-      const response = await fetch(`/api/budget-items/${masterId}/details`, {
-        method: 'POST',
+      const response = await fetch(`/api/budget-details/${detail.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          master_id: masterId,
           total_amount: formData.quantity * formData.unit_price
         })
       })
 
-      if (!response.ok) throw new Error('Failed to add detail')
+      if (!response.ok) throw new Error('Failed to update detail')
 
-      // Call onSuccess to refresh data
-      if (onSuccess) {
-        onSuccess()
-      } else {
-        onClose()
-      }
-      
-      // Reset form
-      setFormData({
-        detail_type: 'material',
-        name: '',
-        description: '',
-        quantity: 1,
-        unit_price: 0,
-        vendor: '',
-        notes: ''
-      })
+      onSuccess()
+      onClose()
     } catch (error) {
-      console.error('Error adding detail:', error)
-      alert('Failed to add detail')
+      console.error('Error updating detail:', error)
+      alert('Failed to update detail')
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const totalAmount = formData.quantity * formData.unit_price
+
+  if (!detail) return null
 
   return (
     <AnimatePresence>
@@ -192,10 +205,10 @@ export default function AddDetailModal({
                   className="flex items-center gap-4"
                 >
                   <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                    <Sparkles className="w-6 h-6 text-white" />
+                    <Edit3 className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-bold text-white">Add Budget Detail</h2>
+                    <h2 className="text-3xl font-bold text-white">Edit Budget Detail</h2>
                     <p className="text-white/80 mt-1">for {masterName}</p>
                   </div>
                 </motion.div>
@@ -272,7 +285,7 @@ export default function AddDetailModal({
                       required
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all duration-300"
                       placeholder="e.g., Premium Floor Tiles, Electrical Wiring"
                     />
                   </div>
@@ -288,7 +301,7 @@ export default function AddDetailModal({
                       type="text"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all duration-300"
                       placeholder="Brief description of the item"
                     />
                   </div>
@@ -314,7 +327,7 @@ export default function AddDetailModal({
                       step="0.01"
                       value={formData.quantity}
                       onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all duration-300"
                     />
                   </div>
 
@@ -331,7 +344,7 @@ export default function AddDetailModal({
                       step="0.01"
                       value={formData.unit_price}
                       onChange={(e) => setFormData({ ...formData, unit_price: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all duration-300"
                     />
                   </div>
 
@@ -357,7 +370,7 @@ export default function AddDetailModal({
                       type="text"
                       value={formData.vendor}
                       onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all duration-300"
                       placeholder="e.g., Builders Warehouse"
                     />
                   </div>
@@ -377,17 +390,45 @@ export default function AddDetailModal({
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all duration-300"
                     placeholder="Any additional notes about this budget item..."
                   />
                 </motion.div>
+
+                {/* Current vs New comparison */}
+                {detail && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.8 }}
+                    className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl border border-gray-200"
+                  >
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Budget Impact</h3>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <div className="text-xs text-gray-500">Current Budget</div>
+                        <div className="text-lg font-bold text-gray-700">R {detail.total_amount.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">New Budget</div>
+                        <div className="text-lg font-bold text-blue-600">R {totalAmount.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Difference</div>
+                        <div className={`text-lg font-bold ${totalAmount > detail.total_amount ? 'text-red-600' : 'text-green-600'}`}>
+                          {totalAmount > detail.total_amount ? '+' : ''}R {(totalAmount - detail.total_amount).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </div>
 
               {/* Footer Actions */}
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8 }}
+                transition={{ delay: 0.9 }}
                 className="flex justify-between items-center mt-8 pt-6 border-t-2 border-gray-100"
               >
                 <div className="text-sm text-gray-500">
@@ -410,7 +451,7 @@ export default function AddDetailModal({
                     disabled={isSubmitting}
                     className={`px-8 py-3 bg-gradient-to-r ${selectedType?.color} text-white rounded-xl font-medium shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
                     style={{
-                      boxShadow: isSubmitting ? 'none' : '0 10px 25px -5px rgba(59, 130, 246, 0.3)'
+                      boxShadow: isSubmitting ? 'none' : '0 10px 25px -5px rgba(147, 51, 234, 0.3)'
                     }}
                   >
                     <Save className="w-5 h-5" />
@@ -421,10 +462,10 @@ export default function AddDetailModal({
                           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                           className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
                         />
-                        Adding...
+                        Updating...
                       </span>
                     ) : (
-                      'Add Detail'
+                      'Update Detail'
                     )}
                   </motion.button>
                 </div>

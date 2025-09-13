@@ -10,8 +10,8 @@ import {
   Grid3x3, DoorOpen, Trees, MoreHorizontal, TrendingUp, PieChart,
   CheckCircle, Clock, AlertCircle, Calculator, Hammer, Star,
   Phone, Mail, Building2, Wrench, MessageSquare, Edit2, Calendar,
-  CalendarDays, StickyNote, ChevronRight, CircleCheck, X,
-  Bed, Bath, ChefHat, Tv, TreePine, Wind, Warehouse, FootprintsIcon
+  CalendarDays, StickyNote, ChevronRight, ChevronDown, CircleCheck, X,
+  Bed, Bath, ChefHat, Tv, TreePine, Wind, Warehouse, FootprintsIcon, Settings
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Navigation from '@/components/Navigation'
@@ -19,13 +19,18 @@ import AddVendorModal from './AddVendorModal'
 import AddTimelineModal from './AddTimelineModal'
 import AddTimelineNote from './AddTimelineNote'
 import EditTimelineModal from './EditTimelineModal'
-import AddItemModal from './AddItemModal'
 import EditItemModal from './EditItemModal'
 import RoomsList from './RoomsList'
-import BudgetMasterDetailRow from '@/components/budget/BudgetMasterDetailRow'
+import BudgetMasterDetailRowEditable from '@/components/budget/BudgetMasterDetailRowEditable'
+import BudgetInlineAdd from '@/components/budget/BudgetInlineAdd'
 import VendorsList from './VendorsList'
 import ActionPlanModal from './ActionPlanModal'
 import BudgetItemNotesModal from './BudgetItemNotesModal'
+import AddDetailModal from './AddDetailModal'
+import EditDetailModal from './EditDetailModal'
+import AddActualModal from './AddActualModal'
+import EditActualModal from './EditActualModal'
+import DeleteConfirmationModal from '@/components/DeleteConfirmationModal'
 
 interface Project {
   id: number
@@ -126,7 +131,6 @@ export default function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [showAddRoomModal, setShowAddRoomModal] = useState(false)
-  const [showAddItemModal, setShowAddItemModal] = useState(false)
   const [editingMaster, setEditingMaster] = useState<BudgetMaster | null>(null)
   const [notesMaster, setNotesMaster] = useState<BudgetMaster | null>(null)
   const [showAddVendorModal, setShowAddVendorModal] = useState(false)
@@ -137,10 +141,72 @@ export default function ProjectDetailsPage() {
   const [editingTimelineEntry, setEditingTimelineEntry] = useState<any>(null)
   const [showActionPlanModal, setShowActionPlanModal] = useState(false)
   const [selectedEntryForActionPlan, setSelectedEntryForActionPlan] = useState<any>(null)
+  const [showAddDetailModal, setShowAddDetailModal] = useState(false)
+  const [showEditDetailModal, setShowEditDetailModal] = useState(false)
+  const [selectedMasterId, setSelectedMasterId] = useState<number | null>(null)
+  const [selectedMasterName, setSelectedMasterName] = useState<string>('')
+  const [selectedDetail, setSelectedDetail] = useState<any>(null)
+  const [showAddActualModal, setShowAddActualModal] = useState(false)
+  const [showEditActualModal, setShowEditActualModal] = useState(false)
+  const [selectedDetailId, setSelectedDetailId] = useState<number | null>(null)
+  const [selectedDetailName, setSelectedDetailName] = useState<string>('')
+  const [expandedDetailsAfterActual, setExpandedDetailsAfterActual] = useState<Set<number>>(new Set())
+  const [selectedActual, setSelectedActual] = useState<any>(null)
+  const [defaultTab, setDefaultTab] = useState<string>('overview')
+  const [savingDefaultTab, setSavingDefaultTab] = useState(false)
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState<number | null>(null)
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | null>(null)
+  const [expandAll, setExpandAll] = useState(false)
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean
+    type: 'vendor' | 'master' | 'detail' | 'actual' | null
+    id: number | null
+    name: string
+    onConfirm: () => void
+  }>({ isOpen: false, type: null, id: null, name: '', onConfirm: () => {} })
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     fetchProjectData()
+    fetchDefaultTab()
   }, [projectId])
+
+  const fetchDefaultTab = async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/settings?key=defaultTab`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.value) {
+          setDefaultTab(data.value)
+          setActiveTab(data.value)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching default tab:', error)
+    }
+  }
+
+  const handleDefaultTabChange = async (newTab: string) => {
+    setSavingDefaultTab(true)
+    try {
+      const response = await fetch(`/api/projects/${projectId}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settingKey: 'defaultTab',
+          settingValue: newTab
+        })
+      })
+
+      if (response.ok) {
+        setDefaultTab(newTab)
+      }
+    } catch (error) {
+      console.error('Error saving default tab:', error)
+    } finally {
+      setSavingDefaultTab(false)
+    }
+  }
 
   const fetchProjectData = async () => {
     try {
@@ -202,49 +268,105 @@ export default function ProjectDetailsPage() {
     }
   }
 
-  const handleDeleteVendor = async (vendorId: number) => {
-    if (confirm('Are you sure you want to delete this vendor?')) {
-      try {
-        const response = await fetch(`/api/projects/${projectId}/vendors/${vendorId}`, {
-          method: 'DELETE'
-        })
-        if (response.ok) {
-          fetchProjectData()
+  const handleDeleteVendor = async (vendorId: number, vendorName?: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'vendor',
+      id: vendorId,
+      name: vendorName || 'this vendor',
+      onConfirm: async () => {
+        setIsDeleting(true)
+        try {
+          const response = await fetch(`/api/projects/${projectId}/vendors/${vendorId}`, {
+            method: 'DELETE'
+          })
+          if (response.ok) {
+            fetchProjectData()
+            setDeleteModal({ isOpen: false, type: null, id: null, name: '', onConfirm: () => {} })
+          }
+        } catch (error) {
+          console.error('Error deleting vendor:', error)
+        } finally {
+          setIsDeleting(false)
         }
-      } catch (error) {
-        console.error('Error deleting vendor:', error)
       }
-    }
+    })
   }
 
-  const handleDeleteMaster = async (masterId: number) => {
-    if (confirm('Are you sure you want to delete this budget item and all its details?')) {
-      try {
-        const response = await fetch(`/api/projects/${projectId}/budget-masters/${masterId}`, {
-          method: 'DELETE'
-        })
-        if (response.ok) {
-          fetchProjectData()
+  const handleDeleteMaster = async (masterId: number, masterName?: string) => {
+    const master = budgetMasters.find(m => m.id === masterId)
+    setDeleteModal({
+      isOpen: true,
+      type: 'master',
+      id: masterId,
+      name: masterName || master?.name || 'this budget item',
+      onConfirm: async () => {
+        setIsDeleting(true)
+        try {
+          const response = await fetch(`/api/projects/${projectId}/budget-masters/${masterId}`, {
+            method: 'DELETE'
+          })
+          if (response.ok) {
+            fetchProjectData()
+            setDeleteModal({ isOpen: false, type: null, id: null, name: '', onConfirm: () => {} })
+          }
+        } catch (error) {
+          console.error('Error deleting master:', error)
+        } finally {
+          setIsDeleting(false)
         }
-      } catch (error) {
-        console.error('Error deleting master:', error)
       }
-    }
+    })
   }
 
-  const handleDeleteDetail = async (detailId: number) => {
-    if (confirm('Are you sure you want to delete this detail item?')) {
-      try {
-        const response = await fetch(`/api/budget-details/${detailId}`, {
-          method: 'DELETE'
-        })
-        if (response.ok) {
-          fetchProjectData()
+  const handleDeleteDetail = async (detailId: number, detailName?: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'detail',
+      id: detailId,
+      name: detailName || 'this detail item',
+      onConfirm: async () => {
+        setIsDeleting(true)
+        try {
+          const response = await fetch(`/api/budget-details/${detailId}`, {
+            method: 'DELETE'
+          })
+          if (response.ok) {
+            fetchProjectData()
+            setDeleteModal({ isOpen: false, type: null, id: null, name: '', onConfirm: () => {} })
+          }
+        } catch (error) {
+          console.error('Error deleting detail:', error)
+        } finally {
+          setIsDeleting(false)
         }
-      } catch (error) {
-        console.error('Error deleting detail:', error)
       }
-    }
+    })
+  }
+
+  const handleDeleteActual = async (actualId: number, actualName?: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'actual',
+      id: actualId,
+      name: actualName || 'this actual expense',
+      onConfirm: async () => {
+        setIsDeleting(true)
+        try {
+          const response = await fetch(`/api/budget-actuals/${actualId}`, {
+            method: 'DELETE'
+          })
+          if (response.ok) {
+            fetchProjectData()
+            setDeleteModal({ isOpen: false, type: null, id: null, name: '', onConfirm: () => {} })
+          }
+        } catch (error) {
+          console.error('Error deleting actual:', error)
+        } finally {
+          setIsDeleting(false)
+        }
+      }
+    })
   }
 
   const handleDeleteTimelineEntry = async (entryId: number) => {
@@ -303,130 +425,141 @@ export default function ProjectDetailsPage() {
     <div className="min-h-screen bg-gray-50">
       <Navigation />
       
-      {/* Breadcrumb */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center gap-2 text-sm">
-            <Link href="/projects" className="text-gray-600 hover:text-gray-900">
-              Projects
-            </Link>
-            <span className="text-gray-400">/</span>
-            <span className="text-gray-900 font-medium">{project.name}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Enhanced Project Header with 3D Effects */}
-      <div className="relative bg-gradient-to-br from-white via-blue-50/30 to-purple-50/30 shadow-xl overflow-hidden">
+      {/* Beautiful Compact Header Bar with 3D Effects */}
+      <div className="relative bg-gradient-to-br from-white via-blue-50/30 to-purple-50/30 shadow-xl sticky top-0 z-40 overflow-hidden">
+        {/* Background effects */}
         <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 via-transparent to-purple-400/5" />
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl" />
         <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-gradient-to-br from-cyan-400/10 to-indigo-400/10 rounded-full blur-3xl" />
         
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex justify-between items-start"
-          >
-            <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-purple-800 bg-clip-text text-transparent">
-                {project.name}
-              </h1>
-              {project.description && (
-                <p className="text-gray-600 mt-3 text-lg">{project.description}</p>
-              )}
-            </div>
+        <div className="relative w-full px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between py-4">
+            {/* Left: Project Info */}
             <motion.div 
-              whileHover={{ scale: 1.05 }}
-              className="relative group"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-4"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-400 rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
-              <div className="relative bg-white/80 backdrop-blur-xl rounded-2xl px-6 py-4 shadow-xl border border-white/50">
-                <p className="text-sm font-medium text-gray-600">Total Budget</p>
-                <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  {formatCurrency(project.total_budget)}
-                </p>
+              <Link href="/projects" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
+              </Link>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-purple-800 bg-clip-text text-transparent">
+                  {project.name}
+                </h1>
+                <p className="text-sm text-gray-600">{project.description}</p>
               </div>
             </motion.div>
-          </motion.div>
 
-          {/* Enhanced Budget Progress Bar */}
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 }}
-            className="mt-8 p-6 bg-white/60 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50"
-          >
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg">
-                  <TrendingUp className="w-5 h-5 text-white" />
+            {/* Center: Budget Info - Evenly Distributed */}
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="flex-1 flex items-center justify-evenly gap-4"
+            >
+              {/* Total Budget */}
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-gradient-to-r from-blue-100 to-purple-100 rounded-lg">
+                  <DollarSign className="w-4 h-4 text-purple-600" />
                 </div>
-                <span className="text-gray-700 font-medium">Budget Allocation Progress</span>
+                <div>
+                  <p className="text-xs text-gray-500">Total Budget</p>
+                  <p className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    {formatCurrency(project.total_budget)}
+                  </p>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  {budgetPercentage.toFixed(0)}%
-                </span>
-                <p className="text-sm text-gray-600">{formatCurrency(budgetAllocated)} allocated</p>
-              </div>
-            </div>
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-200 to-purple-200 rounded-full blur-sm" />
-              <div className="relative bg-gray-100 rounded-full h-4 overflow-hidden shadow-inner">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(budgetPercentage, 100)}%` }}
-                  transition={{ duration: 1.5, ease: "easeOut" }}
-                  className="h-full relative overflow-hidden rounded-full"
-                  style={{
-                    background: 'linear-gradient(90deg, #3B82F6, #8B5CF6, #EC4899)',
-                  }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/30" />
-                </motion.div>
-              </div>
-            </div>
-            
-            {/* Budget Stats */}
-            <div className="grid grid-cols-3 gap-4 mt-6">
-              <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl">
-                <p className="text-xs text-gray-600">Remaining</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {formatCurrency(project.total_budget - budgetAllocated)}
+
+              {/* Vertical Divider */}
+              <div className="h-10 w-px bg-gray-200" />
+
+              {/* Planned */}
+              <div>
+                <p className="text-xs text-gray-500">Planned</p>
+                <p className="text-lg font-bold text-indigo-600">
+                  {formatCurrency(budgetAllocated)}
                 </p>
               </div>
-              <div className="text-center p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl">
-                <p className="text-xs text-gray-600">Spent</p>
+
+              {/* Vertical Divider */}
+              <div className="h-10 w-px bg-gray-200" />
+
+              {/* Spent */}
+              <div>
+                <p className="text-xs text-gray-500">Spent</p>
                 <p className="text-lg font-bold text-purple-600">
                   {formatCurrency(budgetUsed)}
                 </p>
               </div>
-              <div className="text-center p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl">
-                <p className="text-xs text-gray-600">Efficiency</p>
+
+              {/* Vertical Divider */}
+              <div className="h-10 w-px bg-gray-200" />
+
+              {/* Remaining */}
+              <div>
+                <p className="text-xs text-gray-500">Remaining</p>
+                <p className="text-lg font-bold text-blue-600">
+                  {formatCurrency(project.total_budget - budgetAllocated)}
+                </p>
+              </div>
+
+              {/* Vertical Divider */}
+              <div className="h-10 w-px bg-gray-200" />
+              
+              {/* Progress */}
+              <div className="flex items-center gap-3">
+                <div>
+                  <p className="text-xs text-gray-500">Progress</p>
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-200 to-purple-200 rounded-full blur-sm" />
+                      <div className="relative w-24 bg-gray-100 rounded-full h-2 overflow-hidden shadow-inner">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(budgetPercentage, 100)}%` }}
+                          transition={{ duration: 1.5, ease: "easeOut" }}
+                          className="h-full relative overflow-hidden rounded-full"
+                          style={{
+                            background: 'linear-gradient(90deg, #3B82F6, #8B5CF6, #EC4899)',
+                          }}
+                        >
+                          <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                        </motion.div>
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                      {budgetPercentage.toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Vertical Divider */}
+              <div className="h-10 w-px bg-gray-200" />
+
+              {/* Efficiency */}
+              <div>
+                <p className="text-xs text-gray-500">Efficiency</p>
                 <p className="text-lg font-bold text-green-600">
                   {budgetAllocated > 0 ? ((budgetUsed / budgetAllocated) * 100).toFixed(0) : 0}%
                 </p>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
 
           {/* Enhanced 3D Tabs Navigation */}
           <motion.div 
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="relative mt-8"
+            transition={{ delay: 0.2 }}
+            className="relative"
           >
-            {/* Glowing background effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 via-purple-400/20 to-pink-400/20 rounded-2xl blur-2xl" />
-            
-            <div className="relative flex gap-3 p-2 bg-gradient-to-br from-gray-100/90 via-white/50 to-gray-100/90 backdrop-blur-xl rounded-2xl border border-white/50 shadow-xl">
+            <div className="flex gap-2 p-2 bg-gradient-to-br from-gray-100/90 via-white/50 to-gray-100/90 backdrop-blur-xl rounded-t-xl border border-white/50">
               {[
                 { id: 'overview', label: 'Overview', icon: Grid3x3, color: 'from-blue-500 to-cyan-500', bgColor: 'from-blue-50 to-cyan-50' },
                 { id: 'rooms', label: 'Rooms', icon: Home, color: 'from-emerald-500 to-green-500', bgColor: 'from-emerald-50 to-green-50' },
-                { id: 'items', label: 'Budget & Items', icon: Package, color: 'from-purple-500 to-pink-500', bgColor: 'from-purple-50 to-pink-50' },
+                { id: 'items', label: 'Budget', icon: Package, color: 'from-purple-500 to-pink-500', bgColor: 'from-purple-50 to-pink-50' },
                 { id: 'vendors', label: 'Vendors', icon: Wrench, color: 'from-orange-500 to-red-500', bgColor: 'from-orange-50 to-red-50' },
                 { id: 'renovation-plan', label: 'Renovation Plan', icon: CalendarDays, color: 'from-indigo-500 to-purple-500', bgColor: 'from-indigo-50 to-purple-50' },
                 { id: 'analytics', label: 'Analytics', icon: PieChart, color: 'from-teal-500 to-cyan-500', bgColor: 'from-teal-50 to-cyan-50' }
@@ -434,42 +567,58 @@ export default function ProjectDetailsPage() {
                 <motion.button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  initial={{ opacity: 0, scale: 0.8 }}
+                  initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.4 + index * 0.05 }}
+                  transition={{ delay: 0.3 + index * 0.05 }}
                   whileHover={{ 
                     scale: 1.05,
-                    y: -4,
+                    y: -2,
                     transition: { type: "spring", stiffness: 400 }
                   }}
                   whileTap={{ scale: 0.95 }}
                   className="relative group flex-1"
-                  style={{ perspective: '1000px' }}
                 >
                   <div className={`
-                    relative flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-300
+                    relative flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-medium transition-all duration-300
                     ${
                       activeTab === tab.id
-                        ? 'text-white shadow-2xl transform-gpu'
+                        ? 'text-white shadow-lg'
                         : 'text-gray-700 hover:text-gray-900'
                     }
                   `}>
-                    {/* Active tab background gradient */}
+                    {/* Active tab background gradient - unique per tab */}
                     {activeTab === tab.id && (
                       <motion.div
-                        layoutId="activeTab"
-                        className={`absolute inset-0 bg-gradient-to-r ${tab.color} rounded-xl shadow-lg`}
-                        initial={false}
-                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                        className={`absolute inset-0 rounded-lg shadow-lg`}
+                        style={{
+                          background: tab.id === 'overview' ? 'linear-gradient(to right, #3B82F6, #06B6D4)' :
+                                     tab.id === 'rooms' ? 'linear-gradient(to right, #10B981, #22C55E)' :
+                                     tab.id === 'items' ? 'linear-gradient(to right, #A855F7, #EC4899)' :
+                                     tab.id === 'vendors' ? 'linear-gradient(to right, #F97316, #EF4444)' :
+                                     tab.id === 'renovation-plan' ? 'linear-gradient(to right, #6366F1, #A855F7)' :
+                                     'linear-gradient(to right, #14B8A6, #06B6D4)'
+                        }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
                       />
                     )}
                     
                     {/* Hover effect background */}
                     {activeTab !== tab.id && (
                       <div className={`
-                        absolute inset-0 bg-gradient-to-r ${tab.bgColor} rounded-xl 
+                        absolute inset-0 rounded-lg 
                         opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                      `} />
+                      `}
+                      style={{
+                        background: tab.id === 'overview' ? 'linear-gradient(to right, #DBEAFE, #E0F2FE)' :
+                                   tab.id === 'rooms' ? 'linear-gradient(to right, #D1FAE5, #DCFCE7)' :
+                                   tab.id === 'items' ? 'linear-gradient(to right, #F3E8FF, #FCE7F3)' :
+                                   tab.id === 'vendors' ? 'linear-gradient(to right, #FED7AA, #FEE2E2)' :
+                                   tab.id === 'renovation-plan' ? 'linear-gradient(to right, #E0E7FF, #F3E8FF)' :
+                                   'linear-gradient(to right, #CCFBF1, #E0F2FE)'
+                      }} />
                     )}
                     
                     {/* Icon with rotation effect */}
@@ -479,380 +628,319 @@ export default function ProjectDetailsPage() {
                       className="relative z-10"
                     >
                       <tab.icon className={`
-                        w-5 h-5 transition-all duration-300
-                        ${activeTab === tab.id ? 'text-white drop-shadow-lg' : 'text-gray-600 group-hover:text-gray-800'}
+                        w-4 h-4 transition-all duration-300
+                        ${activeTab === tab.id ? 'text-white' : 'text-gray-600 group-hover:text-gray-800'}
                       `} />
                     </motion.div>
                     
                     {/* Label */}
                     <span className={`
-                      relative z-10 transition-all duration-300
+                      relative z-10 text-sm transition-all duration-300
                       ${activeTab === tab.id ? 'text-white font-semibold' : 'group-hover:font-medium'}
                     `}>
                       {tab.label}
                     </span>
-                    
-                    {/* Active indicator dot */}
-                    {activeTab === tab.id && (
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-white rounded-full shadow-lg"
-                      />
-                    )}
-                    
-                    {/* Glow effect for active tab */}
-                    {activeTab === tab.id && (
-                      <div className={`
-                        absolute inset-0 bg-gradient-to-r ${tab.color} rounded-xl blur-xl opacity-50 -z-10
-                        animate-pulse
-                      `} />
-                    )}
                   </div>
                 </motion.button>
               ))}
             </div>
-            
-            {/* Bottom reflection effect */}
-            <div className="absolute -bottom-4 left-0 right-0 h-8 bg-gradient-to-b from-white/10 to-transparent rounded-full blur-xl" />
           </motion.div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'overview' && (
           <div className="space-y-8">
-            {/* Enhanced 3D Summary Cards */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Compact Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                whileHover={{ 
-                  scale: 1.05,
-                  rotateY: 5,
-                  z: 50
-                }}
-                className="relative group"
-                style={{ perspective: '1000px' }}
+                whileHover={{ scale: 1.02 }}
+                className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
-                <div className="relative bg-gradient-to-br from-blue-50 to-white rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 border border-blue-100/50 transform-gpu">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl shadow-lg">
-                      <Package className="w-6 h-6 text-white" />
-                    </div>
-                    <span className="text-xs font-semibold text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Items</span>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-50 rounded-lg">
+                    <Package className="w-5 h-5 text-blue-600" />
                   </div>
-                  <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">{summary?.summary?.total_items || 0}</p>
-                  <p className="text-sm text-gray-600 mt-2">Total Items</p>
-                  <div className="mt-4 h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full" style={{ width: '70%' }} />
+                  <div className="flex-1">
+                    <p className="text-2xl font-bold text-gray-900">{summary?.summary?.total_items || 0}</p>
+                    <p className="text-xs text-gray-500">Total Items</p>
                   </div>
                 </div>
               </motion.div>
 
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                whileHover={{ scale: 1.02 }}
+                className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-50 rounded-lg">
+                    <Home className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-2xl font-bold text-gray-900">{rooms.length}</p>
+                    <p className="text-xs text-gray-500">Active Rooms</p>
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                whileHover={{ 
-                  scale: 1.05,
-                  rotateY: 5,
-                  z: 50
-                }}
-                className="relative group"
-                style={{ perspective: '1000px' }}
+                whileHover={{ scale: 1.02 }}
+                className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 to-green-400 rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
-                <div className="relative bg-gradient-to-br from-emerald-50 to-white rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 border border-emerald-100/50 transform-gpu">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-gradient-to-br from-emerald-500 to-green-500 rounded-xl shadow-lg">
-                      <Home className="w-6 h-6 text-white" />
-                    </div>
-                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">Spaces</span>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-50 rounded-lg">
+                    <Calculator className="w-5 h-5 text-purple-600" />
                   </div>
-                  <p className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">{rooms.length}</p>
-                  <p className="text-sm text-gray-600 mt-2">Active Rooms</p>
-                  <div className="mt-4 h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-emerald-500 to-green-500 rounded-full" style={{ width: '100%' }} />
+                  <div className="flex-1">
+                    <p className="text-xl font-bold text-gray-900">{formatCurrency(budgetAllocated)}</p>
+                    <p className="text-xs text-gray-500">Estimated</p>
                   </div>
                 </div>
               </motion.div>
 
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                whileHover={{ 
-                  scale: 1.05,
-                  rotateY: 5,
-                  z: 50
-                }}
-                className="relative group"
-                style={{ perspective: '1000px' }}
+                transition={{ delay: 0.25 }}
+                whileHover={{ scale: 1.02 }}
+                className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-400 to-pink-400 rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
-                <div className="relative bg-gradient-to-br from-purple-50 to-white rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 border border-purple-100/50 transform-gpu">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl shadow-lg">
-                      <Calculator className="w-6 h-6 text-white" />
-                    </div>
-                    <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded-full">Budget</span>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-50 rounded-lg">
+                    <DollarSign className="w-5 h-5 text-orange-600" />
                   </div>
-                  <p className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">{formatCurrency(budgetAllocated)}</p>
-                  <p className="text-sm text-gray-600 mt-2">Estimated Total</p>
-                  <div className="mt-4 h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" style={{ width: `${Math.min(budgetPercentage, 100)}%` }} />
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                whileHover={{ 
-                  scale: 1.05,
-                  rotateY: 5,
-                  z: 50
-                }}
-                className="relative group"
-                style={{ perspective: '1000px' }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-400 to-red-400 rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
-                <div className="relative bg-gradient-to-br from-orange-50 to-white rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 border border-orange-100/50 transform-gpu">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl shadow-lg">
-                      <DollarSign className="w-6 h-6 text-white" />
-                    </div>
-                    <span className="text-xs font-semibold text-orange-600 bg-orange-100 px-2 py-1 rounded-full">Spent</span>
-                  </div>
-                  <p className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">{formatCurrency(budgetUsed)}</p>
-                  <p className="text-sm text-gray-600 mt-2">Actual Spent</p>
-                  <div className="mt-4 h-1 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full" style={{ width: `${budgetUsed > 0 ? (budgetUsed / budgetAllocated) * 100 : 0}%` }} />
+                  <div className="flex-1">
+                    <p className="text-xl font-bold text-gray-900">{formatCurrency(budgetUsed)}</p>
+                    <p className="text-xs text-gray-500">Actual Spent</p>
                   </div>
                 </div>
               </motion.div>
             </div>
 
-            {/* Enhanced Category Breakdown with 3D Cards - Full Width */}
+            {/* Compact Category Breakdown */}
             <motion.div 
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-              className="relative group"
+              transition={{ delay: 0.3 }}
+              className="bg-white rounded-lg shadow-sm border border-gray-100 p-5"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 via-blue-400 to-purple-400 rounded-2xl blur-2xl opacity-10 group-hover:opacity-20 transition-opacity duration-500" />
-              <div className="relative bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-gray-100/50">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Budget by Category</h3>
-                  <div className="flex gap-2">
-                    <motion.button 
-                      whileHover={{ scale: 1.1 }}
-                      className="p-2 bg-gradient-to-r from-indigo-100 to-purple-100 rounded-lg text-indigo-600"
-                    >
-                      <TrendingUp className="w-4 h-4" />
-                    </motion.button>
-                    <motion.button 
-                      whileHover={{ scale: 1.1 }}
-                      className="p-2 bg-gradient-to-r from-indigo-100 to-purple-100 rounded-lg text-indigo-600"
-                    >
-                      <PieChart className="w-4 h-4" />
-                    </motion.button>
-                  </div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Budget by Category</h3>
+                <div className="flex gap-1">
+                  <button className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
+                    <TrendingUp className="w-4 h-4" />
+                  </button>
+                  <button className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
+                    <PieChart className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {summary?.byCategory?.slice(0, 6).map((cat: any, index: number) => {
-                    const Icon = iconMap[cat.icon] || Package
-                    const percentage = budgetAllocated > 0 ? (cat.estimated_total / budgetAllocated) * 100 : 0
-                    return (
-                      <motion.div
-                        key={cat.category || `category-${index}`}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.6 + index * 0.05 }}
-                        whileHover={{ scale: 1.05, y: -5 }}
-                        className="relative group/item"
-                      >
-                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/20 to-purple-400/20 rounded-xl blur-xl opacity-0 group-hover/item:opacity-100 transition-opacity duration-300" />
-                        <div className="relative p-5 bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-100/50 hover:shadow-xl transition-all duration-300 h-full flex flex-col">
-                          <div className="flex items-center gap-3 mb-3">
-                            <motion.div 
-                              whileHover={{ rotate: 360 }}
-                              transition={{ duration: 0.5 }}
-                              className="relative"
-                            >
-                              <div className="absolute inset-0 blur-xl opacity-50" style={{ backgroundColor: cat.color }} />
-                              <div 
-                                className="relative w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transform-gpu"
-                                style={{ 
-                                  background: `linear-gradient(135deg, ${cat.color}20, ${cat.color}40)`,
-                                  border: `2px solid ${cat.color}30`
-                                }}
-                              >
-                                <Icon className="w-6 h-6" style={{ color: cat.color }} />
-                              </div>
-                            </motion.div>
-                            <div className="flex-1">
-                              <p className="font-semibold text-gray-900 truncate">{cat.category || 'Uncategorized'}</p>
-                              <p className="text-xs text-gray-500">{cat.item_count} items</p>
-                            </div>
-                          </div>
-                          <div className="flex-1 flex flex-col justify-between">
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <p className="font-bold text-lg bg-gradient-to-r from-gray-700 to-gray-900 bg-clip-text text-transparent">
-                                    {formatCurrency(cat.estimated_total)}
-                                  </p>
-                                  <p className="text-xs text-gray-500">Budgeted</p>
-                                </div>
-                                <span className="text-xs font-medium text-gray-500">{percentage.toFixed(1)}%</span>
-                              </div>
-                              <div className={`flex justify-between items-center pt-1 ${cat.actual_total !== null && cat.actual_total > 0 ? 'border-t border-gray-100' : ''}`}>
-                                {cat.actual_total !== null && cat.actual_total > 0 ? (
-                                  <>
-                                    <div>
-                                      <p className="font-semibold text-md text-green-600">
-                                        {formatCurrency(cat.actual_total)}
-                                      </p>
-                                      <p className="text-xs text-gray-500">Actual</p>
-                                    </div>
-                                    <span className="text-xs font-medium text-green-600">
-                                      {((cat.actual_total / cat.estimated_total) * 100).toFixed(0)}%
-                                    </span>
-                                  </>
-                                ) : (
-                                  <div className="h-8" /> 
-                                )}
-                              </div>
-                            </div>
-                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-3">
-                              <motion.div 
-                                initial={{ width: 0 }}
-                                animate={{ width: `${percentage}%` }}
-                                transition={{ duration: 1, delay: 0.6 + index * 0.05 }}
-                                className="h-full rounded-full"
-                                style={{ backgroundColor: cat.color }}
-                              />
-                            </div>
-                          </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                {summary?.byCategory?.slice(0, 10).map((cat: any, index: number) => {
+                  const Icon = iconMap[cat.icon] || Package
+                  const percentage = budgetAllocated > 0 ? (cat.estimated_total / budgetAllocated) * 100 : 0
+                  return (
+                    <motion.div
+                      key={cat.category || `category-${index}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.3 + index * 0.02 }}
+                      whileHover={{ scale: 1.02 }}
+                      className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div 
+                          className="w-8 h-8 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: `${cat.color}15` }}
+                        >
+                          <Icon className="w-4 h-4" style={{ color: cat.color }} />
                         </div>
-                      </motion.div>
-                    )
-                  })}
-                </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{cat.category || 'Uncategorized'}</p>
+                          <p className="text-xs text-gray-500">{cat.item_count} items</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {formatCurrency(cat.estimated_total)}
+                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs text-gray-500">{percentage.toFixed(0)}%</span>
+                          {cat.actual_total > 0 && (
+                            <span className="text-xs text-green-600 font-medium">
+                              {formatCurrency(cat.actual_total)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden mt-2">
+                          <div 
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ 
+                              width: `${percentage}%`,
+                              backgroundColor: cat.color + '80'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )
+                })}
               </div>
             </motion.div>
 
-            {/* Enhanced Room Summary with 3D Effects - Full Width */}
+            {/* Compact Rooms Overview */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7 }}
-              className="relative group"
+              transition={{ delay: 0.4 }}
+              className="bg-white rounded-lg shadow-sm border border-gray-100 p-5"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-blue-400 to-indigo-400 rounded-2xl blur-2xl opacity-10 group-hover:opacity-20 transition-opacity duration-500" />
-              <div className="relative bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-gray-100/50">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold bg-gradient-to-r from-cyan-600 to-indigo-600 bg-clip-text text-transparent">Rooms Overview</h3>
-                  <div className="flex items-center gap-4">
-                    <div className="flex gap-3">
-                      <div className="text-center px-4 py-2 bg-gradient-to-r from-cyan-50 to-blue-50 rounded-lg">
-                        <p className="text-2xl font-bold text-cyan-600">{rooms.length}</p>
-                        <p className="text-xs text-gray-600">Total Rooms</p>
-                      </div>
-                      <div className="text-center px-4 py-2 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg">
-                        <p className="text-2xl font-bold text-indigo-600">{summary?.summary?.total_items || 0}</p>
-                        <p className="text-xs text-gray-600">Total Items</p>
-                      </div>
-                    </div>
-                    <motion.div 
-                      whileHover={{ rotate: 180 }}
-                      transition={{ duration: 0.5 }}
-                      className="p-2 bg-gradient-to-r from-cyan-100 to-indigo-100 rounded-lg"
-                    >
-                      <Home className="w-5 h-5 text-cyan-600" />
-                    </motion.div>
-                  </div>
-                </div>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {summary?.byRoom?.map((room: any, index: number) => {
-                    const roomPercentage = budgetAllocated > 0 ? (room.estimated_total / budgetAllocated) * 100 : 0
-                    const { icon: RoomIcon, color: roomColor } = getRoomIcon(room?.room || room?.room_name || 'Unknown')
-                    return (
-                      <motion.div
-                        key={room?.room || room?.room_name || `room-${index}`}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.8 + index * 0.05 }}
-                        whileHover={{ scale: 1.05, y: -5, rotateY: 5 }}
-                        className="relative group/room"
-                        style={{ perspective: '1000px' }}
-                      >
-                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-indigo-400/20 rounded-xl blur-xl opacity-0 group-hover/room:opacity-100 transition-opacity duration-300" />
-                        <div className="relative p-5 bg-gradient-to-br from-white via-cyan-50/20 to-indigo-50/20 rounded-xl border border-gray-100 hover:shadow-xl transition-all duration-300 transform-gpu h-full flex flex-col">
-                          <div className="flex items-center gap-3 mb-3">
-                            <motion.div 
-                              whileHover={{ rotate: 360 }}
-                              transition={{ duration: 0.5 }}
-                              className="relative"
-                            >
-                              <div 
-                                className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md"
-                                style={{ 
-                                  background: `linear-gradient(135deg, ${roomColor}20, ${roomColor}40)`,
-                                  border: `2px solid ${roomColor}30`
-                                }}
-                              >
-                                <RoomIcon className="w-5 h-5" style={{ color: roomColor }} />
-                              </div>
-                            </motion.div>
-                            <p className="font-semibold text-gray-900 truncate flex-1">{room.room}</p>
-                          </div>
-                          <div className="flex-1 flex flex-col justify-between">
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <p className="text-xl font-bold text-transparent bg-gradient-to-r from-cyan-600 to-indigo-600 bg-clip-text">
-                                    {formatCurrency(room.estimated_total)}
-                                  </p>
-                                  <p className="text-xs text-gray-500">Budgeted</p>
-                                </div>
-                                <span className="text-xs font-medium text-gray-500">{roomPercentage.toFixed(0)}%</span>
-                              </div>
-                              <div className="min-h-[32px]">
-                                {room.actual_total !== null && room.actual_total > 0 ? (
-                                  <div className="pt-2 border-t border-gray-100">
-                                    <p className="text-md font-semibold text-green-600">
-                                      {formatCurrency(room.actual_total)}
-                                    </p>
-                                    <p className="text-xs text-gray-500">Actual • {((room.actual_total / room.estimated_total) * 100).toFixed(0)}%</p>
-                                  </div>
-                                ) : (
-                                  <div className="h-8" />
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500">{room.item_count} items</p>
-                            </div>
-                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-3">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${roomPercentage}%` }}
-                                transition={{ duration: 1, delay: 0.8 + index * 0.05 }}
-                                className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full shadow-sm"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )
-                  })}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Rooms Overview</h3>
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-gray-500">
+                    <span className="font-semibold text-gray-700">{rooms.length}</span> rooms
+                  </span>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-500">
+                    <span className="font-semibold text-gray-700">{summary?.summary?.total_items || 0}</span> items
+                  </span>
                 </div>
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                {summary?.byRoom?.slice(0, 10).map((room: any, index: number) => {
+                  const roomPercentage = budgetAllocated > 0 ? (room.estimated_total / budgetAllocated) * 100 : 0
+                  const { icon: RoomIcon, color: roomColor } = getRoomIcon(room?.room || room?.room_name || 'Unknown')
+                  return (
+                    <motion.div
+                      key={room?.room || room?.room_name || `room-${index}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.4 + index * 0.02 }}
+                      whileHover={{ scale: 1.02 }}
+                      className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div 
+                          className="w-7 h-7 rounded-md flex items-center justify-center"
+                          style={{ backgroundColor: `${roomColor}15` }}
+                        >
+                          <RoomIcon className="w-4 h-4" style={{ color: roomColor }} />
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 truncate flex-1">{room.room}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {formatCurrency(room.estimated_total)}
+                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs text-gray-500">{room.item_count} items</span>
+                          {room.actual_total > 0 && (
+                            <span className="text-xs text-green-600 font-medium">
+                              {((room.actual_total / room.estimated_total) * 100).toFixed(0)}%
+                            </span>
+                          )}
+                        </div>
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden mt-2">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ 
+                              width: `${roomPercentage}%`,
+                              backgroundColor: roomColor + '80'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </div>
+            </motion.div>
+
+            {/* Default Tab Setting */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-white rounded-lg shadow-sm border border-gray-100 p-6"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-semibold text-gray-900">Default Tab Settings</h3>
+                <motion.div
+                  whileHover={{ rotate: 180 }}
+                  transition={{ duration: 0.5 }}
+                  className="p-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg"
+                >
+                  <Settings className="w-4 h-4 text-purple-600" />
+                </motion.div>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Choose which tab to display by default when opening this project:
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {[
+                  { value: 'overview', label: 'Overview', icon: Grid3x3, color: 'from-blue-500 to-cyan-500', bgColor: 'from-blue-50 to-cyan-50' },
+                  { value: 'rooms', label: 'Rooms', icon: Home, color: 'from-emerald-500 to-green-500', bgColor: 'from-emerald-50 to-green-50' },
+                  { value: 'items', label: 'Budget', icon: Package, color: 'from-purple-500 to-pink-500', bgColor: 'from-purple-50 to-pink-50' },
+                  { value: 'vendors', label: 'Vendors', icon: Building2, color: 'from-orange-500 to-red-500', bgColor: 'from-orange-50 to-red-50' },
+                  { value: 'renovation-plan', label: 'Renovation Plan', icon: Calendar, color: 'from-indigo-500 to-purple-500', bgColor: 'from-indigo-50 to-purple-50' },
+                  { value: 'analytics', label: 'Analytics', icon: PieChart, color: 'from-teal-500 to-cyan-500', bgColor: 'from-teal-50 to-cyan-50' }
+                ].map((tab) => {
+                  const Icon = tab.icon
+                  const isSelected = defaultTab === tab.value
+                  return (
+                    <motion.button
+                      key={tab.value}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleDefaultTabChange(tab.value)}
+                      disabled={savingDefaultTab}
+                      className={`
+                        relative p-4 rounded-xl border-2 transition-all duration-300
+                        ${isSelected 
+                          ? `bg-gradient-to-br ${tab.bgColor} border-purple-300 shadow-lg` 
+                          : 'bg-white border-gray-200 hover:border-purple-200 hover:bg-purple-50/30'
+                        }
+                        ${savingDefaultTab ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                      `}
+                    >
+                      {isSelected && (
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className={`absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-br ${tab.color} rounded-full flex items-center justify-center shadow-md`}
+                        >
+                          <CheckCircle className="w-4 h-4 text-white" />
+                        </motion.div>
+                      )}
+                      <Icon className={`w-6 h-6 mx-auto mb-2 ${isSelected ? 'text-purple-600' : 'text-gray-500'}`} />
+                      <p className={`text-xs font-medium ${isSelected ? 'text-purple-900' : 'text-gray-700'}`}>
+                        {tab.label}
+                      </p>
+                    </motion.button>
+                  )
+                })}
+              </div>
+              {savingDefaultTab && (
+                <div className="flex items-center justify-center py-3 mt-3">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full"
+                  />
+                  <span className="ml-2 text-sm text-purple-600">Saving preference...</span>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
@@ -863,39 +951,187 @@ export default function ProjectDetailsPage() {
 
         {activeTab === 'items' && (
           <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Budget & Items</h2>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowAddItemModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-lg transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                Add Budget Item
-              </motion.button>
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Budget</h2>
+                <button
+                  onClick={() => setExpandAll(!expandAll)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    expandAll 
+                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {expandAll ? (
+                    <><ChevronDown className="w-4 h-4 inline mr-1" /> Collapse All</>
+                  ) : (
+                    <><ChevronRight className="w-4 h-4 inline mr-1" /> Expand All</>
+                  )}
+                </button>
+              </div>
+
+              {/* Filter Section */}
+              <div className="mb-4 space-y-3">
+                {/* Room Filters */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filter by Room:</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedRoomFilter(null)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        selectedRoomFilter === null
+                          ? 'bg-blue-500 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      All Rooms
+                    </button>
+                    {rooms.map(room => (
+                      <button
+                        key={room.id}
+                        onClick={() => setSelectedRoomFilter(room.id)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                          selectedRoomFilter === room.id
+                            ? 'bg-blue-500 text-white shadow-md'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <Home className="w-3.5 h-3.5 inline mr-1" />
+                        {room.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Category Filters */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filter by Category:</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedCategoryFilter(null)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        selectedCategoryFilter === null
+                          ? 'bg-purple-500 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      All Categories
+                    </button>
+                    {categories.map(category => {
+                      const Icon = iconMap[category.icon] || Package
+                      return (
+                        <button
+                          key={category.id}
+                          onClick={() => setSelectedCategoryFilter(category.id)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                            selectedCategoryFilter === category.id
+                              ? 'text-white shadow-md'
+                              : 'text-gray-700 hover:opacity-80'
+                          }`}
+                          style={{
+                            backgroundColor: selectedCategoryFilter === category.id 
+                              ? category.color 
+                              : `${category.color}20`,
+                            color: selectedCategoryFilter === category.id 
+                              ? 'white' 
+                              : category.color
+                          }}
+                        >
+                          <Icon className="w-3.5 h-3.5 inline mr-1" />
+                          {category.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Inline Add Component */}
+              <BudgetInlineAdd
+                projectId={parseInt(projectId)}
+                rooms={rooms}
+                categories={categories}
+                onSuccess={fetchProjectData}
+              />
             </div>
 
             <div className="space-y-4">
               <AnimatePresence>
                 {budgetMasters.length > 0 ? (
-                  budgetMasters.map((master, index) => (
-                    <BudgetMasterDetailRow
+                  (() => {
+                    const filtered = budgetMasters.filter(master => {
+                      // Apply room filter
+                      if (selectedRoomFilter !== null && master.room_id !== selectedRoomFilter) {
+                        return false
+                      }
+                      // Apply category filter
+                      if (selectedCategoryFilter !== null && master.category_id !== selectedCategoryFilter) {
+                        return false
+                      }
+                      return true
+                    })
+                    
+                    if (filtered.length === 0) {
+                      return (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="text-center py-16 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl border-2 border-dashed border-orange-200"
+                        >
+                          <Package className="w-16 h-16 text-orange-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-gray-600 mb-2">No items match your filters</h3>
+                          <p className="text-gray-500">Try adjusting your room or category filters</p>
+                          <button
+                            onClick={() => {
+                              setSelectedRoomFilter(null)
+                              setSelectedCategoryFilter(null)
+                            }}
+                            className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+                          >
+                            Clear Filters
+                          </button>
+                        </motion.div>
+                      )
+                    }
+                    
+                    return filtered.map((master, index) => (
+                    <BudgetMasterDetailRowEditable
                       key={master.id}
+                      projectId={parseInt(projectId)}
                       item={master}
+                      rooms={rooms}
+                      categories={categories}
                       onAddDetail={(masterId) => {
-                        // TODO: Implement add detail modal
-                        console.log('Add detail for master:', masterId)
+                        setSelectedMasterId(masterId)
+                        setSelectedMasterName(master.name)
+                        setShowAddDetailModal(true)
                       }}
                       onEditMaster={setEditingMaster}
                       onDeleteMaster={handleDeleteMaster}
                       onEditDetail={(detail) => {
-                        // TODO: Implement edit detail modal
-                        console.log('Edit detail:', detail)
+                        setSelectedDetail(detail)
+                        setSelectedMasterName(master.name)
+                        setShowEditDetailModal(true)
                       }}
                       onDeleteDetail={handleDeleteDetail}
+                      onAddActual={(detailId, detailName) => {
+                        setSelectedDetailId(detailId)
+                        setSelectedDetailName(detailName)
+                        setShowAddActualModal(true)
+                      }}
+                      expandedDetailsAfterActual={expandedDetailsAfterActual}
+                      forceExpandAll={expandAll}
+                      onEditActual={(actual, detailName) => {
+                        setSelectedActual(actual)
+                        setSelectedDetailName(detailName)
+                        setShowEditActualModal(true)
+                      }}
+                      onDeleteActual={handleDeleteActual}
+                      onOpenNotesModal={setNotesMaster}
+                      onRefresh={fetchProjectData}
                     />
                   ))
+                  })()
                 ) : (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -904,15 +1140,7 @@ export default function ProjectDetailsPage() {
                   >
                     <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-600 mb-2">No Budget Items Yet</h3>
-                    <p className="text-gray-500 mb-6">Start by adding your first budget item</p>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setShowAddItemModal(true)}
-                      className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg shadow-lg hover:from-blue-700 hover:to-purple-700 transition-all"
-                    >
-                      Create First Budget Item
-                    </motion.button>
+                    <p className="text-gray-500">Start by adding your first budget item using the form above</p>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1279,20 +1507,6 @@ export default function ProjectDetailsPage() {
         />
       )}
 
-      {/* Add Item Modal */}
-      {showAddItemModal && (
-        <AddItemModal
-          projectId={parseInt(projectId)}
-          rooms={rooms}
-          categories={categories}
-          vendors={vendors}
-          onClose={() => setShowAddItemModal(false)}
-          onSuccess={() => {
-            setShowAddItemModal(false)
-            fetchProjectData()
-          }}
-        />
-      )}
 
       {/* Edit Master Modal */}
       {editingMaster && (
@@ -1380,6 +1594,114 @@ export default function ProjectDetailsPage() {
           }}
         />
       )}
+
+      {selectedMasterId && (
+        <AddDetailModal
+          isOpen={showAddDetailModal}
+          masterId={selectedMasterId}
+          masterName={selectedMasterName}
+          onClose={() => {
+            setShowAddDetailModal(false)
+            setSelectedMasterId(null)
+            setSelectedMasterName('')
+          }}
+          onSuccess={() => {
+            setShowAddDetailModal(false)
+            setSelectedMasterId(null)
+            setSelectedMasterName('')
+            fetchProjectData()
+          }}
+        />
+      )}
+
+      <EditDetailModal
+        isOpen={showEditDetailModal}
+        detail={selectedDetail}
+        masterName={selectedMasterName}
+        onClose={() => {
+          setShowEditDetailModal(false)
+          setSelectedDetail(null)
+          setSelectedMasterName('')
+        }}
+        onSuccess={() => {
+          setShowEditDetailModal(false)
+          setSelectedDetail(null)
+          setSelectedMasterName('')
+          fetchProjectData()
+        }}
+      />
+
+      {showAddActualModal && selectedDetailId && (
+        <AddActualModal
+          isOpen={showAddActualModal}
+          detailId={selectedDetailId}
+          detailName={selectedDetailName}
+          onClose={() => {
+            setShowAddActualModal(false)
+            setSelectedDetailId(null)
+            setSelectedDetailName('')
+          }}
+          onSuccess={() => {
+            setShowAddActualModal(false)
+            // Auto-expand the detail to show the new actual
+            if (selectedDetailId) {
+              setExpandedDetailsAfterActual(prev => new Set(prev).add(selectedDetailId))
+            }
+            setSelectedDetailId(null)
+            setSelectedDetailName('')
+            fetchProjectData().then(() => {
+              // Clear the expanded details set after refresh
+              setTimeout(() => setExpandedDetailsAfterActual(new Set()), 100)
+            })
+          }}
+        />
+      )}
+
+      {showEditActualModal && selectedActual && (
+        <EditActualModal
+          isOpen={showEditActualModal}
+          actual={selectedActual}
+          detailName={selectedDetailName}
+          onClose={() => {
+            setShowEditActualModal(false)
+            setSelectedActual(null)
+            setSelectedDetailName('')
+          }}
+          onSuccess={() => {
+            setShowEditActualModal(false)
+            // Keep the detail expanded after editing actual
+            if (selectedActual?.detail_id) {
+              setExpandedDetailsAfterActual(prev => new Set(prev).add(selectedActual.detail_id))
+            }
+            setSelectedActual(null)
+            setSelectedDetailName('')
+            fetchProjectData().then(() => {
+              // Clear the expanded details set after refresh
+              setTimeout(() => setExpandedDetailsAfterActual(new Set()), 100)
+            })
+          }}
+        />
+      )}
+
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        title={
+          deleteModal.type === 'vendor' ? 'Delete Vendor' :
+          deleteModal.type === 'master' ? 'Delete Budget Item' :
+          deleteModal.type === 'detail' ? 'Delete Detail Item' :
+          'Delete Actual Expense'
+        }
+        message={
+          deleteModal.type === 'vendor' ? 'This will remove the vendor from your project.' :
+          deleteModal.type === 'master' ? 'This will delete the budget item and all its details.' :
+          deleteModal.type === 'detail' ? 'This will remove this detail from the budget item.' :
+          'This will remove this actual expense record.'
+        }
+        itemName={deleteModal.name}
+        onConfirm={deleteModal.onConfirm}
+        onCancel={() => setDeleteModal({ isOpen: false, type: null, id: null, name: '', onConfirm: () => {} })}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }

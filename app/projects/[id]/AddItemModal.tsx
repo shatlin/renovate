@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Package, Tag, Home, DollarSign, Calculator, FileText, Users, Layers } from 'lucide-react'
+import { X, Tag, Home, FileText, StickyNote, MessageSquare } from 'lucide-react'
 
 interface AddItemModalProps {
   projectId: number
@@ -27,23 +27,9 @@ export default function AddItemModal({
     description: '',
     room_id: '',
     category_id: '',
-    quantity: '1',
-    unit_price: '',
-    estimated_cost: '',
-    actual_cost: '',
-    vendor: '',
-    status: 'pending',
-    type: 'material',
     notes: '',
     long_notes: ''
   })
-
-  useEffect(() => {
-    const qty = parseFloat(formData.quantity) || 0
-    const price = parseFloat(formData.unit_price) || 0
-    const estimated = qty * price
-    setFormData(prev => ({ ...prev, estimated_cost: estimated.toString() }))
-  }, [formData.quantity, formData.unit_price])
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -76,17 +62,15 @@ export default function AddItemModal({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({
-          ...formData,
+          name: formData.name,
+          description: formData.description,
           room_id: formData.room_id ? parseInt(formData.room_id) : null,
           category_id: formData.category_id ? parseInt(formData.category_id) : null,
-          quantity: parseInt(formData.quantity) || 1,
-          unit_price: parseFloat(formData.unit_price) || 0,
-          estimated_cost: parseFloat(formData.estimated_cost) || 0,
-          actual_cost: formData.actual_cost ? parseFloat(formData.actual_cost) : null,
           notes: formData.notes,
           long_notes: formData.long_notes,
-          status: formData.status,
-          type: formData.type
+          estimated_cost: 0,
+          actual_cost: 0,
+          status: 'pending'
         })
       })
       
@@ -112,7 +96,7 @@ export default function AddItemModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          className="relative bg-white rounded-2xl w-full max-w-6xl shadow-2xl overflow-hidden"
+          className="relative bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden"
           style={{
             background: 'linear-gradient(to bottom right, #ffffff, #fafafa)',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.03)'
@@ -133,11 +117,11 @@ export default function AddItemModal({
                   transition={{ type: "spring", delay: 0.1 }}
                   className="p-2 bg-white/10 rounded-lg backdrop-blur-sm"
                 >
-                  <Package className="w-5 h-5 text-white" />
+                  <FileText className="w-5 h-5 text-white" />
                 </motion.div>
                 <div>
                   <h2 className="text-xl font-bold text-white">Add New Budget Item</h2>
-                  <p className="text-xs text-slate-300 mt-0.5">Create a new item for your project budget</p>
+                  <p className="text-xs text-slate-300 mt-0.5">Create a master budget item for your project</p>
                 </div>
               </div>
               <motion.button
@@ -152,46 +136,12 @@ export default function AddItemModal({
           </div>
         
           <form onSubmit={handleSubmit} className="p-8">
-            {/* Type Selection - Compact inline */}
-            <div className="mb-6">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                Item Type
-              </label>
-              <div className="flex gap-2">
-                {['material', 'labour', 'service'].map((type) => (
-                  <motion.label
-                    key={type}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className={`flex-1 relative cursor-pointer`}
-                  >
-                    <input
-                      type="radio"
-                      name="type"
-                      value={type}
-                      checked={formData.type === type}
-                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="sr-only"
-                    />
-                    <div className={`
-                      px-4 py-2.5 rounded-lg border-2 text-center font-medium text-sm capitalize transition-all
-                      ${formData.type === type 
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md shadow-blue-200/50' 
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}
-                    `}>
-                      {type}
-                    </div>
-                  </motion.label>
-                ))}
-              </div>
-            </div>
-
-            {/* Main Grid - More compact with 3 columns */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="col-span-2">
+            {/* Main Fields */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
                 <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                  <Package className="w-3.5 h-3.5" />
-                  Item Name
+                  <FileText className="w-3.5 h-3.5" />
+                  Item Name *
                 </label>
                 <input
                   type="text"
@@ -199,16 +149,17 @@ export default function AddItemModal({
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Kitchen Cabinets, Flooring, Plumbing"
+                  placeholder="e.g., Kitchen Renovation, Bathroom Upgrade"
                 />
               </div>
 
               <div>
                 <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                   <Home className="w-3.5 h-3.5" />
-                  Room
+                  Room *
                 </label>
                 <select
+                  required
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm"
                   value={formData.room_id}
                   onChange={(e) => setFormData({ ...formData, room_id: e.target.value })}
@@ -223,7 +174,7 @@ export default function AddItemModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                   <Tag className="w-3.5 h-3.5" />
@@ -243,7 +194,7 @@ export default function AddItemModal({
                 </select>
               </div>
 
-              <div className="col-span-2">
+              <div>
                 <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
                   <FileText className="w-3.5 h-3.5" />
                   Description
@@ -253,159 +204,42 @@ export default function AddItemModal({
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Brief description of the item"
+                  placeholder="Brief description of the work"
                 />
               </div>
             </div>
 
-            {/* Pricing Section with visual feedback */}
-            <div className="bg-gradient-to-r from-gray-50 to-blue-50/30 rounded-xl p-4 mb-6 border border-gray-100">
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    <Layers className="w-3.5 h-3.5" />
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                  />
-                </div>
-
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    <DollarSign className="w-3.5 h-3.5" />
-                    Unit Price
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
-                    value={formData.unit_price}
-                    onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    <Calculator className="w-3.5 h-3.5" />
-                    Estimated
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      readOnly
-                      className="w-full px-4 py-2.5 border border-blue-200 rounded-lg bg-blue-50 text-blue-700 font-semibold"
-                      value={formData.estimated_cost}
-                    />
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: formData.estimated_cost ? 1 : 0 }}
-                      className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                    <DollarSign className="w-3.5 h-3.5" />
-                    Actual Cost
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white"
-                    value={formData.actual_cost}
-                    onChange={(e) => setFormData({ ...formData, actual_cost: e.target.value })}
-                    placeholder="If purchased"
-                  />
-                </div>
-              </div>
+            {/* Notes Section */}
+            <div className="mb-6">
+              <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                <StickyNote className="w-3.5 h-3.5" />
+                Quick Notes
+              </label>
+              <input
+                type="text"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Short notes or reminders"
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                  <Users className="w-3.5 h-3.5" />
-                  Vendor
-                </label>
-                <select
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm"
-                  value={formData.vendor}
-                  onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                >
-                  <option value="">Select Vendor</option>
-                  {vendors.map((vendor: any) => (
-                    <option key={vendor.id} value={vendor.name}>
-                      {vendor.name} - {vendor.specialization}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                  Status
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['pending', 'ordered', 'delivered'].map((status) => (
-                    <motion.button
-                      key={status}
-                      type="button"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setFormData({ ...formData, status })}
-                      className={`
-                        px-3 py-2 rounded-lg border text-xs font-medium capitalize transition-all
-                        ${formData.status === status 
-                          ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}
-                      `}
-                    >
-                      {status}
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
+            <div className="mb-8">
+              <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+                <MessageSquare className="w-3.5 h-3.5" />
+                Detailed Comments
+              </label>
+              <textarea
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm resize-none"
+                rows={4}
+                value={formData.long_notes}
+                onChange={(e) => setFormData({ ...formData, long_notes: e.target.value })}
+                placeholder="Detailed notes, specifications, or requirements..."
+              />
             </div>
 
-            {/* Notes Section - Compact */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                  Quick Notes
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Brief notes or reminders"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
-                  Detailed Comments
-                </label>
-                <textarea
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 backdrop-blur-sm resize-none"
-                  rows={1}
-                  value={formData.long_notes}
-                  onChange={(e) => setFormData({ ...formData, long_notes: e.target.value })}
-                  placeholder="Specifications, requirements, vendor discussions..."
-                />
-              </div>
-            </div>
-
-            {/* Action Buttons with 3D effect */}
-            <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
+            {/* Actions with gradient hover */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
               <motion.button
                 type="button"
                 whileHover={{ scale: 1.02 }}
@@ -417,11 +251,14 @@ export default function AddItemModal({
               </motion.button>
               <motion.button
                 type="submit"
-                whileHover={{ scale: 1.02, boxShadow: '0 10px 20px -10px rgba(59, 130, 246, 0.5)' }}
+                whileHover={{ 
+                  scale: 1.02,
+                  boxShadow: '0 10px 20px -10px rgba(59, 130, 246, 0.5)'
+                }}
                 whileTap={{ scale: 0.98 }}
-                className="px-8 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-lg shadow-lg transition-all"
+                className="px-8 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-lg shadow-lg hover:from-blue-700 hover:to-blue-800 transition-all"
               >
-                Add Item
+                Create Budget Item
               </motion.button>
             </div>
           </form>

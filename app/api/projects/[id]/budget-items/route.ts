@@ -18,9 +18,9 @@ export async function GET(
     // Get all budget items (master records) with their details
     const items = db.getBudgetItems(parseInt(id));
     
-    // For each item, get its details
+    // For each item, get its details with actuals
     const itemsWithDetails = items.map((item: any) => {
-      const details = db.getBudgetDetails(item.id);
+      const details = db.getBudgetDetailsWithActuals(item.id);
       return {
         ...item,
         details,

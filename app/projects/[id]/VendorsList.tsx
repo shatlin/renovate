@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Edit2, Trash2, Phone, Mail, MapPin, Grip, Star } from 'lucide-react'
 import AddVendorModal from './AddVendorModal'
+import DeleteConfirmationModal from '@/components/DeleteConfirmationModal'
 import { 
   DndContext, 
   closestCenter, 
@@ -131,6 +132,12 @@ export default function VendorsList({ projectId, vendors, onUpdate }: VendorsLis
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean
+    vendorId: number | null
+    vendorName: string
+  }>({ isOpen: false, vendorId: null, vendorName: '' })
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -178,19 +185,31 @@ export default function VendorsList({ projectId, vendors, onUpdate }: VendorsLis
     }
   }
 
-  const handleDelete = async (vendorId: number) => {
-    if (!confirm('Are you sure you want to delete this vendor?')) return
+  const handleDelete = (vendorId: number, vendorName: string) => {
+    setDeleteModal({
+      isOpen: true,
+      vendorId,
+      vendorName
+    })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteModal.vendorId) return
     
+    setIsDeleting(true)
     try {
-      const response = await fetch(`/api/projects/${projectId}/vendors/${vendorId}`, {
+      const response = await fetch(`/api/projects/${projectId}/vendors/${deleteModal.vendorId}`, {
         method: 'DELETE'
       })
       
       if (response.ok) {
         onUpdate()
+        setDeleteModal({ isOpen: false, vendorId: null, vendorName: '' })
       }
     } catch (error) {
       console.error('Error deleting vendor:', error)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -273,7 +292,7 @@ export default function VendorsList({ projectId, vendors, onUpdate }: VendorsLis
                   key={vendor.id}
                   vendor={vendor}
                   onEdit={() => setEditingVendor(vendor)}
-                  onDelete={() => handleDelete(vendor.id)}
+                  onDelete={() => handleDelete(vendor.id, vendor.name || vendor.company || 'this vendor')}
                 />
               ))}
             </div>
@@ -288,6 +307,16 @@ export default function VendorsList({ projectId, vendors, onUpdate }: VendorsLis
           </div>
         )}
       </div>
+
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        title="Delete Vendor"
+        message="This will remove the vendor from your project."
+        itemName={deleteModal.vendorName}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteModal({ isOpen: false, vendorId: null, vendorName: '' })}
+        isDeleting={isDeleting}
+      />
 
       {(showAddModal || editingVendor) && (
         <AddVendorModal

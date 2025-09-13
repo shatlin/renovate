@@ -139,10 +139,16 @@ export class SQLiteAdapter {
         COUNT(DISTINCT bi.id) as total_items,
         COUNT(DISTINCT bi.room_id) as rooms_count,
         COALESCE(SUM(bi.estimated_cost), 0) as total_estimated,
-        COALESCE(SUM(bi.actual_cost), 0) as total_actual
+        COALESCE((
+          SELECT SUM(ba.total_amount)
+          FROM budget_actuals ba
+          JOIN budget_details bd ON ba.detail_id = bd.id
+          JOIN budget_items bi2 ON bd.budget_item_id = bi2.id
+          WHERE bi2.project_id = ?
+        ), 0) as total_actual
       FROM budget_items bi
       WHERE bi.project_id = ?
-    `).get(projectId);
+    `).get(projectId, projectId);
 
     const byRoom = this.db.prepare(`
       SELECT 
@@ -152,13 +158,19 @@ export class SQLiteAdapter {
         COALESCE(r.allocated_budget, 0) as allocated_budget,
         COUNT(bi.id) as item_count,
         COALESCE(SUM(bi.estimated_cost), 0) as estimated_total,
-        COALESCE(SUM(bi.actual_cost), 0) as actual_total
+        COALESCE((
+          SELECT SUM(ba.total_amount)
+          FROM budget_actuals ba
+          JOIN budget_details bd ON ba.detail_id = bd.id
+          JOIN budget_items bi2 ON bd.budget_item_id = bi2.id
+          WHERE bi2.room_id = r.id AND bi2.project_id = ?
+        ), 0) as actual_total
       FROM rooms r
       LEFT JOIN budget_items bi ON r.id = bi.room_id AND bi.project_id = ?
       WHERE r.project_id = ?
       GROUP BY r.id, r.name, r.allocated_budget
       ORDER BY r.name
-    `).all(projectId, projectId);
+    `).all(projectId, projectId, projectId);
 
     const byCategory = this.db.prepare(`
       SELECT 
@@ -168,14 +180,20 @@ export class SQLiteAdapter {
         COALESCE(c.color, '#6B7280') as color,
         COUNT(bi.id) as item_count,
         COALESCE(SUM(bi.estimated_cost), 0) as estimated_total,
-        COALESCE(SUM(bi.actual_cost), 0) as actual_total
+        COALESCE((
+          SELECT SUM(ba.total_amount)
+          FROM budget_actuals ba
+          JOIN budget_details bd ON ba.detail_id = bd.id
+          JOIN budget_items bi2 ON bd.budget_item_id = bi2.id
+          WHERE bi2.category_id = c.id AND bi2.project_id = ?
+        ), 0) as actual_total
       FROM budget_items bi
       LEFT JOIN categories c ON bi.category_id = c.id
       WHERE bi.project_id = ?
       GROUP BY c.id, c.name, c.icon, c.color
       HAVING item_count > 0
       ORDER BY estimated_total DESC
-    `).all(projectId);
+    `).all(projectId, projectId);
 
     const byType = this.db.prepare(`
       SELECT 
@@ -358,7 +376,13 @@ export class SQLiteAdapter {
         COALESCE(bi.total_service, 0) as total_service,
         COALESCE(bi.total_other, 0) as total_other,
         COALESCE(bi.total_new_item, 0) as total_new_item,
-        (SELECT COUNT(*) FROM budget_details WHERE budget_item_id = bi.id) as detail_count
+        (SELECT COUNT(*) FROM budget_details WHERE budget_item_id = bi.id) as detail_count,
+        COALESCE((
+          SELECT SUM(ba.total_amount)
+          FROM budget_actuals ba
+          JOIN budget_details bd ON ba.detail_id = bd.id
+          WHERE bd.budget_item_id = bi.id
+        ), 0) as actual_cost
       FROM budget_items bi
       LEFT JOIN rooms r ON bi.room_id = r.id
       LEFT JOIN categories c ON bi.category_id = c.id
@@ -510,6 +534,224 @@ export class SQLiteAdapter {
     `);
     stmt.run({ ...data, user_id: userId });
     return this.getUserSettings(userId);
+  }
+
+  // Budget Actuals Methods
+  getBudgetActuals(detailId: number) {
+    return this.db.prepare(`
+      SELECT * FROM budget_actuals 
+      WHERE detail_id = ? 
+      ORDER BY purchase_date DESC, created_at DESC
+    `).all(detailId);
+  }
+
+  getBudgetActual(id: number) {
+    return this.db.prepare('SELECT * FROM budget_actuals WHERE id = ?').get(id);
+  }
+
+  createBudgetActual(data: any) {
+    const stmt = this.db.prepare(`
+      INSERT INTO budget_actuals (
+        detail_id, name, quantity, unit_price, total_amount,
+        vendor, invoice_number, purchase_date, payment_method, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const result = stmt.run(
+      data.detail_id,
+      data.name,
+      data.quantity || 1,
+      data.unit_price || 0,
+      data.total_amount || (data.quantity * data.unit_price) || 0,
+      data.vendor || null,
+      data.invoice_number || null,
+      data.purchase_date || null,
+      data.payment_method || null,
+      data.notes || null
+    );
+    
+    return this.db.prepare('SELECT * FROM budget_actuals WHERE id = ?').get(result.lastInsertRowid);
+  }
+
+  updateBudgetActual(id: number, data: any) {
+    const fields = [];
+    const values: any = {};
+    
+    if (data.name !== undefined) {
+      fields.push('name = @name');
+      values.name = data.name;
+    }
+    if (data.quantity !== undefined) {
+      fields.push('quantity = @quantity');
+      values.quantity = data.quantity;
+    }
+    if (data.unit_price !== undefined) {
+      fields.push('unit_price = @unit_price');
+      values.unit_price = data.unit_price;
+    }
+    if (data.total_amount !== undefined) {
+      fields.push('total_amount = @total_amount');
+      values.total_amount = data.total_amount;
+    }
+    if (data.vendor !== undefined) {
+      fields.push('vendor = @vendor');
+      values.vendor = data.vendor;
+    }
+    if (data.invoice_number !== undefined) {
+      fields.push('invoice_number = @invoice_number');
+      values.invoice_number = data.invoice_number;
+    }
+    if (data.purchase_date !== undefined) {
+      fields.push('purchase_date = @purchase_date');
+      values.purchase_date = data.purchase_date;
+    }
+    if (data.payment_method !== undefined) {
+      fields.push('payment_method = @payment_method');
+      values.payment_method = data.payment_method;
+    }
+    if (data.notes !== undefined) {
+      fields.push('notes = @notes');
+      values.notes = data.notes;
+    }
+    
+    if (fields.length === 0) return null;
+    
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.id = id;
+    
+    const stmt = this.db.prepare(`
+      UPDATE budget_actuals 
+      SET ${fields.join(', ')}
+      WHERE id = @id
+    `);
+    
+    stmt.run(values);
+    return this.db.prepare('SELECT * FROM budget_actuals WHERE id = ?').get(id);
+  }
+
+  deleteBudgetActual(id: number) {
+    const stmt = this.db.prepare('DELETE FROM budget_actuals WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  // Budget Master methods (aliases for budget_items)
+  getBudgetMaster(id: number) {
+    return this.getBudgetItem(id);
+  }
+
+  getBudgetMasterById(id: number) {
+    return this.getBudgetItem(id);
+  }
+
+  createBudgetMaster(data: any) {
+    return this.createBudgetItem(data);
+  }
+
+  updateBudgetMaster(id: number, data: any) {
+    return this.updateBudgetItem(id, data);
+  }
+
+  deleteBudgetMaster(id: number) {
+    return this.deleteBudgetItem(id);
+  }
+
+  getBudgetDetailsByMaster(masterId: number) {
+    return this.getBudgetDetails(masterId);
+  }
+
+  // Budget Master Notes methods
+  getBudgetMasterNotes(masterId: number) {
+    return this.db.prepare(`
+      SELECT * FROM budget_notes 
+      WHERE budget_item_id = ? 
+      ORDER BY created_at DESC
+    `).all(masterId);
+  }
+
+  createBudgetMasterNote(data: any) {
+    const stmt = this.db.prepare(`
+      INSERT INTO budget_notes (budget_item_id, content, author)
+      VALUES (@budget_item_id, @content, @author)
+    `);
+    const result = stmt.run({
+      budget_item_id: data.budget_item_id,
+      content: data.content,
+      author: data.author || null
+    });
+    return this.db.prepare(`
+      SELECT * FROM budget_notes WHERE id = ?
+    `).get(result.lastInsertRowid);
+  }
+
+  deleteBudgetMasterNote(id: number) {
+    return this.db.prepare('DELETE FROM budget_notes WHERE id = ?').run(id);
+  }
+
+  linkBudgetToTimeline(timelineEntryId: number, budgetMasterIds: number[]) {
+    // Clear existing links
+    this.db.prepare('DELETE FROM timeline_budget_items WHERE timeline_entry_id = ?').run(timelineEntryId);
+    
+    // Add new links
+    const stmt = this.db.prepare(`
+      INSERT INTO timeline_budget_items (timeline_entry_id, budget_item_id)
+      VALUES (?, ?)
+    `);
+    
+    for (const masterId of budgetMasterIds) {
+      stmt.run(timelineEntryId, masterId);
+    }
+  }
+
+  // Get budget details with actuals
+  getBudgetDetailsWithActuals(masterId: number) {
+    const details = this.db.prepare(`
+      SELECT 
+        bd.*,
+        COALESCE(
+          (SELECT SUM(total_amount) FROM budget_actuals WHERE detail_id = bd.id),
+          0
+        ) as actual_total,
+        COALESCE(
+          (SELECT SUM(quantity) FROM budget_actuals WHERE detail_id = bd.id),
+          0
+        ) as actual_quantity,
+        COALESCE(
+          (SELECT COUNT(*) FROM budget_actuals WHERE detail_id = bd.id),
+          0
+        ) as actual_count
+      FROM budget_details bd
+      WHERE bd.budget_item_id = ?
+      ORDER BY bd.id
+    `).all(masterId);
+    
+    // For each detail, get its actuals
+    for (const detail of details) {
+      detail.actuals = this.getBudgetActuals(detail.id);
+    }
+    
+    return details;
+  }
+
+  // User Settings methods
+  getUserSetting(userId: number, projectId: number, settingKey: string) {
+    const stmt = this.db.prepare(`
+      SELECT setting_value FROM user_settings 
+      WHERE user_id = ? AND project_id = ? AND setting_key = ?
+    `);
+    const result = stmt.get(userId, projectId, settingKey) as any;
+    return result?.setting_value || null;
+  }
+
+  setUserSetting(userId: number, projectId: number, settingKey: string, settingValue: string) {
+    const stmt = this.db.prepare(`
+      INSERT INTO user_settings (user_id, project_id, setting_key, setting_value)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, project_id, setting_key) 
+      DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP
+    `);
+    stmt.run(userId, projectId, settingKey, settingValue);
+    return { success: true };
   }
 
   close() {

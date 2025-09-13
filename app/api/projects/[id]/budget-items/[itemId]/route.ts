@@ -46,6 +46,7 @@ export async function PUT(
       name: data.name,
       description: data.description,
       room_id: data.room_id,
+      category_id: data.category_id,
       status: data.status
     })
     
@@ -80,6 +81,7 @@ export async function PATCH(
     if (updates.name !== undefined) updateData.name = updates.name
     if (updates.description !== undefined) updateData.description = updates.description
     if (updates.room_id !== undefined) updateData.room_id = updates.room_id
+    if (updates.category_id !== undefined) updateData.category_id = updates.category_id
     if (updates.status !== undefined) updateData.status = updates.status
     
     const updatedItem = db.updateBudgetMaster(parseInt(itemId), updateData)
